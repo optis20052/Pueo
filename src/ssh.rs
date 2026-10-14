@@ -45,7 +45,7 @@ fn usable_key(path: &str) -> Result<(PathBuf, Option<KeyCopy>)> {
         return Ok((path, None));
     }
     let key = std::fs::read(&path).with_context(|| format!("Cannot read the SSH key {}", path.display()))?;
-    let copy = gtk::glib::user_runtime_dir().join(format!("pueo-key-{}", uuid::Uuid::new_v4()));
+    let copy = crate::platform::runtime_dir()?.join(format!("pueo-key-{}", uuid::Uuid::new_v4()));
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&copy)?;
     let guard = KeyCopy(copy.clone());
     file.write_all(&key)?;
@@ -70,7 +70,7 @@ fn ssh_error(stderr: &str) -> String {
 /// A helper that ssh runs to obtain the password; it prints the secret passed in the environment.
 fn askpass_script() -> Result<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
-    let path = gtk::glib::user_runtime_dir().join("pueo-askpass.sh");
+    let path = crate::platform::runtime_dir()?.join("pueo-askpass.sh");
     let content = format!("#!/bin/sh\nprintf '%s\\n' \"${ASKPASS_ENV}\"\n");
     if std::fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
         std::fs::write(&path, &content)?;

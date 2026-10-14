@@ -1,0 +1,2234 @@
+import { ScrollView, ListView, TextEdit, Palette, Spinner } from "std-widgets.slint";
+
+export struct ConnectionItem { id: string, name: string, detail: string, kind: string, tag: string, tag-color: color, tint: color, group: string, short-name: string, header: bool, collapsed: bool, symbol: string, icon: image, badge: string, badge-color: color, subtitle: string }
+export struct ObjectItem { label: string, detail: string, index: int, pinned: bool, section: string, header: bool, child: bool, expanded: bool, kind: string, count: int, column-type: string, primary: bool }
+export struct TabItem { title: string, dirty: bool, busy: bool, kind: int }
+export struct CellItem { text: string, null: bool, changed: bool, numeric: bool, multiline: bool }
+export struct RowItem { cells: [CellItem], state: int, marked: bool }
+export struct SqlToken { line: int, col: int, text: string, kind: int }
+export struct Caret { line: int, col: int }
+export struct FieldItem { name: string, value: string, null: bool }
+export struct ImportSource { name: string, badge: string, color: color, detail: string, available: bool }
+export struct ImportItem { connection: ConnectionItem, selected: bool, exists: bool }
+export struct FilterRule { col: int, op: int, value: string }
+export struct ConsoleEntry { time: string, duration: string, sql: string, error: string, user: bool }
+export struct ConnectionForm {
+    id: string, name: string, kind: int, host: string, port: string, user: string,
+    database: string, file: string, schema: string, tls: bool, password: string,
+    ssh: bool, ssh-host: string, ssh-port: string, ssh-user: string, ssh-auth: int,
+    ssh-key: string, ssh-secret: string, color: int, tag: int, group: int, remember: bool
+}
+
+export global Theme {
+    // 0 follows the system, 1 light, 2 dark.
+    in-out property <int> appearance: 0;
+    in-out property <bool> system-dark: true;
+    out property <bool> dark: appearance == 2 || (appearance == 0 && system-dark);
+    out property <color> ink: dark ? #ffffff : #000000;
+    out property <float> shadow: dark ? 1 : 0.45;
+    out property <color> header-hover: dark ? #2c2c2c : #e8e8e8;
+    out property <color> well: dark ? #00000026 : #00000008;
+    out property <color> rail: dark ? #161616 : #e8e8e8;
+    out property <color> toolbar: dark ? #282828 : #f2f2f2;
+    out property <color> sidebar: dark ? #232323 : #f6f6f6;
+    out property <color> content: dark ? #1c1c1c : #ffffff;
+    out property <color> content-alt: dark ? #202020 : #f8f8f8;
+    out property <color> header: dark ? #252525 : #f2f2f2;
+    out property <color> surface: dark ? #ffffff12 : #00000012;
+    out property <color> hover: dark ? #ffffff0d : #0000000b;
+    out property <color> input: dark ? #ffffff0f : #00000008;
+    out property <color> input-border: dark ? #ffffff1a : #00000021;
+    out property <color> menu: dark ? #2e2e2e : #ffffff;
+    out property <color> dialog: dark ? #2a2a2a : #fbfbfb;
+    out property <color> line: dark ? #353535 : #dddddd;
+    out property <color> grid-line: dark ? #2b2b2b : #ebebeb;
+    out property <color> text: dark ? #e9e9e9 : #1d1d1f;
+    out property <color> muted: dark ? #a3a3a3 : #666666;
+    out property <color> faint: dark ? #6f6f6f : #a3a3a3;
+    out property <color> icon: dark ? #c4c4c4 : #4d4d4d;
+    out property <color> accent: dark ? #e46a2a : #e46a2a;
+    out property <color> accent-text: dark ? #ffffff : #ffffff;
+    out property <color> danger: dark ? #e5484d : #d1242f;
+    out property <color> success: dark ? #3fb950 : #1a7f37;
+    out property <color> warning: dark ? #e5a50a : #b7791f;
+    out property <color> keyword: dark ? #82aaff : #1f5fbf;
+    out property <color> string: dark ? #e6c07b : #9a5b00;
+    out property <color> number: dark ? #f78c6c : #c4421a;
+    out property <color> comment: dark ? #6b7d8f : #7a8794;
+    out property <string> mono: Platform.os == OperatingSystemType.macos ? "Menlo" : "monospace";
+    out property <string> ui: Platform.os == OperatingSystemType.macos ? "system-ui" : "sans-serif";
+    out property <[string]> engines: ["PostgreSQL", "MySQL / MariaDB", "SQLite", "Redis"];
+    out property <[string]> engine-badges: ["Pg", "My", "Sl", "Re"];
+    out property <[color]> engine-colors: [#3a86d9, #e8923a, #8a3cf0, #c0392b];
+}
+
+component Label inherits Text { color: Theme.text; font-size: 13px; vertical-alignment: center; }
+component Muted inherits Text { color: Theme.muted; font-size: 12px; vertical-alignment: center; }
+component Rule inherits Rectangle { height: 1px; background: Theme.line; }
+component VRule inherits Rectangle { width: 1px; background: Theme.line; }
+
+component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> active;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    in property <length> icon-size: 16px;
+    in property <color> tint: Theme.icon;
+    out property <bool> has-hover: ta.has-hover;
+    callback clicked;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: root.active ? Theme.accent.with-alpha(0.22) : ta.pressed && root.enabled ? Theme.surface : ta.has-hover && root.enabled ? Theme.hover : transparent;
+    animate background { duration: 120ms; easing: ease; }
+    Image {
+        source: root.icon; width: root.icon-size; height: root.icon-size;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        colorize: !root.enabled ? Theme.faint : root.active ? Theme.accent : root.tint;
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+    accessible-role: button;
+    accessible-label: root.tip;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+}
+
+component ToolGroup inherits Rectangle {
+    height: 32px;
+    border-radius: 9px;
+    background: Theme.ink.with-alpha(0.039);
+    border-width: 1px; border-color: Theme.ink.with-alpha(0.051);
+    HorizontalLayout { padding: 2px; spacing: 2px; @children }
+}
+
+component Btn inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 26px;
+    min-width: lay.preferred-width;
+    border-radius: 6px;
+    background: root.primary ? (ta.pressed ? Theme.accent.darker(0.15) : ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent)
+        : root.active ? Theme.accent.with-alpha(0.22)
+        : ta.pressed ? Theme.ink.with-alpha(0.141) : ta.has-hover ? Theme.ink.with-alpha(0.110) : Theme.ink.with-alpha(0.071);
+    animate background { duration: 120ms; easing: ease; }
+    opacity: root.enabled ? 1 : 0.45;
+    lay := HorizontalLayout {
+        padding-left: 12px; padding-right: 12px; spacing: 6px; alignment: center;
+        if root.has-icon: Image {
+            source: root.icon; width: 14px; height: 14px; y: (parent.height - 14px) / 2;
+            colorize: root.primary ? Theme.accent-text : root.active ? Theme.accent : root.danger ? Theme.danger : Theme.icon;
+        }
+        Text {
+            text: root.text; font-size: 12.5px; vertical-alignment: center;
+            color: root.primary ? Theme.accent-text : root.active ? Theme.accent : root.danger ? Theme.danger : Theme.text;
+            font-weight: root.primary ? 600 : 400;
+        }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+}
+
+component Segmented inherits Rectangle {
+    in property <[string]> items;
+    in property <int> current;
+    in property <bool> enabled: true;
+    callback selected(int);
+    height: 26px;
+    border-radius: 7px;
+    background: Theme.ink.with-alpha(0.051);
+    opacity: root.enabled ? 1 : 0.5;
+    HorizontalLayout {
+        padding: 2px; spacing: 2px;
+        for item[i] in root.items: Rectangle {
+            min-width: label.preferred-width + 24px;
+            border-radius: 5px;
+            background: i == root.current ? Theme.accent : seg.has-hover ? Theme.ink.with-alpha(0.063) : transparent;
+            animate background { duration: 120ms; easing: ease; }
+            label := Text {
+                text: item; font-size: 12.5px; width: parent.width; height: parent.height;
+                horizontal-alignment: center; vertical-alignment: center;
+                color: i == root.current ? Theme.accent-text : Theme.text;
+                font-weight: i == root.current ? 600 : 400;
+            }
+            seg := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.selected(i); } }
+            accessible-role: tab;
+            accessible-label: item;
+            accessible-item-selectable: true;
+            accessible-item-selected: i == root.current;
+            accessible-action-default => { root.selected(i); }
+        }
+    }
+}
+
+component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> password: false;
+    in property <bool> read-only: false;
+    in property <bool> enabled: true;
+    in property <bool> mono: false;
+    in property <bool> round: false;
+    in property <length> font-size: 13px;
+    out property <bool> has-focus: input.has-focus;
+    in property <bool> autofocus: false;
+    init => { if root.autofocus { input.focus(); } }
+    callback edited(string);
+    callback accepted(string);
+    callback navigate(string) -> bool;
+    public function focus-input() { input.focus(); }
+    height: 28px;
+    border-radius: root.round ? self.height / 2 : 6px;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent.with-alpha(0.8) : Theme.input-border;
+    opacity: root.enabled ? 1 : 0.55;
+    forward-focus: input;
+    HorizontalLayout {
+        padding-left: root.round ? 14px : 9px; padding-right: root.round ? 14px : 9px; spacing: 7px;
+        if root.has-icon: Image { source: root.icon; width: 15px; height: 15px; y: (parent.height - 15px) / 2; colorize: Theme.muted; }
+        Rectangle {
+            clip: true;
+            input := TextInput {
+                y: (parent.height - self.height) / 2;
+                width: parent.width; height: self.preferred-height;
+                text <=> root.text;
+                single-line: true;
+                input-type: root.password ? InputType.password : InputType.text;
+                read-only: root.read-only;
+                enabled: root.enabled;
+                color: Theme.text;
+                font-size: root.font-size;
+                font-family: root.mono ? Theme.mono : Theme.ui;
+                selection-background-color: Theme.accent.with-alpha(0.45);
+                edited => { root.edited(self.text); }
+                accepted => { root.accepted(self.text); }
+                key-pressed(event) => {
+                    if event.text == Key.UpArrow && root.navigate("up") { return accept; }
+                    if event.text == Key.DownArrow && root.navigate("down") { return accept; }
+                    if event.text == Key.Escape && root.navigate("escape") { return accept; }
+                    return reject;
+                }
+                accessible-role: text-input;
+                accessible-label: root.placeholder;
+            }
+            if root.text == "": Text {
+                text: root.placeholder; color: Theme.faint; font-size: root.font-size;
+                width: parent.width; height: parent.height; vertical-alignment: center; overflow: elide;
+            }
+        }
+    }
+}
+
+component Select inherits Rectangle {
+    in property <[string]> model;
+    in-out property <int> current-index: 0;
+    in property <bool> enabled: true;
+    in property <string> placeholder: "";
+    out property <string> current-value: root.current-index >= 0 && root.current-index < root.model.length ? root.model[root.current-index] : "";
+    callback selected(int, string);
+    height: 28px;
+    min-width: 80px;
+    border-radius: 6px;
+    background: ta.has-hover && root.enabled ? Theme.ink.with-alpha(0.086) : Theme.input;
+    border-width: 1px; border-color: Theme.input-border;
+    opacity: root.enabled ? 1 : 0.5;
+    HorizontalLayout {
+        padding-left: 10px; padding-right: 8px; spacing: 6px;
+        Text { text: root.current-value != "" ? root.current-value : root.placeholder; color: root.current-value != "" ? Theme.text : Theme.faint; font-size: 13px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+        Image { source: @image-url("icons/chevron-down.svg"); width: 13px; height: 13px; y: (parent.height - 13px) / 2; colorize: Theme.muted; }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { popup.show(); } }
+    popup := PopupWindow {
+        x: 0px; y: root.height + 4px;
+        width: max(root.width, 180px);
+        height: min(root.model.length * 26px + 10px, 320px);
+        Rectangle {
+            background: Theme.menu; border-radius: 8px; border-width: 1px; border-color: Theme.ink.with-alpha(0.102);
+            drop-shadow-blur: 18px; drop-shadow-color: #000000.with-alpha(0.56 * Theme.shadow); drop-shadow-offset-y: 6px;
+            ListView {
+                x: 5px; y: 5px; width: parent.width - 10px; height: parent.height - 10px;
+                for item[i] in root.model: Rectangle {
+                    height: 26px; border-radius: 5px;
+                    background: opt.has-hover ? Theme.accent : transparent;
+                    Image { x: 6px; y: 6px; width: 14px; height: 14px; source: @image-url("icons/check.svg"); colorize: opt.has-hover ? Theme.accent-text : Theme.text; visible: i == root.current-index; }
+                    Text { x: 26px; width: parent.width - 32px; height: parent.height; text: item; font-size: 13px; vertical-alignment: center; overflow: elide; color: opt.has-hover ? Theme.accent-text : Theme.text; }
+                    opt := TouchArea { clicked => { root.current-index = i; root.selected(i, item); } }
+                }
+            }
+        }
+    }
+    accessible-role: combobox;
+    accessible-value: root.current-value;
+}
+
+component Check inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    height: 22px;
+    min-width: lay.preferred-width;
+    opacity: root.enabled ? 1 : 0.5;
+    lay := HorizontalLayout {
+        spacing: 8px;
+        Rectangle {
+            width: 16px; height: 16px; y: 3px; border-radius: 4px;
+            background: root.checked ? Theme.accent : Theme.input;
+            border-width: root.checked ? 0px : 1px; border-color: Theme.ink.with-alpha(0.188);
+            Image { visible: root.checked; source: @image-url("icons/check.svg"); width: 12px; height: 12px; x: 2px; y: 2px; colorize: Theme.accent-text; }
+        }
+        Text { text: root.text; font-size: 13px; color: Theme.text; vertical-alignment: center; }
+    }
+    TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.checked = !root.checked; root.toggled(root.checked); } }
+    accessible-role: checkbox;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+}
+
+component Avatar inherits Rectangle {
+    in property <string> text;
+    in property <color> tone;
+    in property <length> size: 36px;
+    width: root.size; height: root.size;
+    border-radius: root.size / 2;
+    background: @linear-gradient(160deg, root.tone.brighter(0.18) 0%, root.tone 100%);
+    Text { text: root.text; color: white; font-size: root.size * 0.42; font-weight: 500; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+}
+
+component TagPill inherits Rectangle {
+    in property <string> text;
+    in property <color> tone;
+    height: 18px;
+    width: label.preferred-width + 12px;
+    border-radius: 4px;
+    background: root.tone.with-alpha(Theme.dark ? 0.22 : 0.16);
+    label := Text { x: 6px; height: parent.height; text: root.text; color: Theme.dark ? root.tone.brighter(0.35) : root.tone.darker(0.45); font-size: 11.5px; vertical-alignment: center; }
+}
+
+// Ported from the original GTK loading_fx.rs: while the connection works, a faint grid of
+// memory cells lights up as a soft scan wave passes, with the odd bit flipping on and off.
+// One colour; fades in quickly and out slowly, and plays at least 0.9 s for instant queries.
+component LoadingFx inherits Rectangle {
+    in property <bool> busy;
+    in property <color> tone: Theme.accent;
+    property <bool> active: false;
+    property <bool> drawing: root.active || fade-out.running;
+    property <length> pitch: 7px;
+    property <length> cell: 1.6px;
+    changed busy => {
+        if root.busy { root.active = true; hold.running = false; } else { hold.running = true; }
+    }
+    changed active => { if !root.active { fade-out.running = true; } }
+    hold := Timer { interval: 900ms; running: false; triggered => { self.running = false; if !root.busy { root.active = false; } } }
+    fade-out := Timer { interval: 1100ms; running: false; triggered => { self.running = false; } }
+    pure function fract(v: float) -> float { return v - floor(v); }
+    pure function hash(n: float) -> float { return root.fract(Math.sin(n * 12.9898 * 1rad) * 43758.5453); }
+    clip: true;
+    layer := Rectangle {
+        opacity: 0;
+        states [
+            shown when root.active: {
+                opacity: 1;
+                in { animate opacity { duration: 300ms; easing: ease-out; } }
+                out { animate opacity { duration: 1000ms; easing: ease-in-out; } }
+            }
+        ]
+        if root.drawing: fx := Rectangle {
+            property <float> t: animation-tick() / 1s;
+            property <length> band: max(root.width * 0.3, 40px);
+            property <length> wave: root.fract(self.t / 2.2) * (root.width + 2 * self.band) - self.band;
+            property <int> cols: floor(root.width / root.pitch);
+            property <int> rows: floor(root.height / root.pitch);
+            property <length> x0: (root.width - (self.cols - 1) * root.pitch) / 2;
+            property <length> y0: (root.height - (self.rows - 1) * root.pitch) / 2;
+            property <float> tick: floor(self.t * 6);
+            Rectangle {
+                x: fx.wave - fx.band; width: fx.band * 2;
+                background: @linear-gradient(90deg, root.tone.with-alpha(0) 0%, root.tone.with-alpha(0.10) 50%, root.tone.with-alpha(0) 100%);
+            }
+            for n in fx.cols * fx.rows: Rectangle {
+                property <int> cx: mod(n, fx.cols);
+                property <int> cy: floor(n / fx.cols);
+                property <float> seed: self.cx * 131 + self.cy * 71;
+                property <float> d: (fx.x0 + self.cx * root.pitch - fx.wave) / fx.band;
+                property <float> lit: Math.exp(-self.d * self.d * 4) * (0.45 + 0.55 * root.hash(self.seed));
+                property <float> bit: root.hash(self.seed + fx.tick * 0.37) > 0.965 ? 0.5 : 0;
+                x: fx.x0 + self.cx * root.pitch - root.cell / 2; y: fx.y0 + self.cy * root.pitch - root.cell / 2;
+                width: root.cell; height: root.cell;
+                background: root.tone.with-alpha(min(0.10 + 0.55 * self.lit + self.bit, 0.7));
+            }
+        }
+    }
+}
+
+// Crossfade stand-in for the original GTK stacks: when `key` changes, the area under this
+// cover starts hidden and fades in over 120 ms. It never takes input.
+component FadeCover inherits Rectangle {
+    in property <int> key;
+    in property <color> tint: Theme.content;
+    property <bool> covered: false;
+    changed key => { root.covered = true; release.running = true; }
+    release := Timer { interval: 16ms; running: false; triggered => { self.running = false; root.covered = false; } }
+    background: root.tint;
+    opacity: 0;
+    states [
+        on when root.covered: {
+            opacity: 1;
+            out { animate opacity { duration: 120ms; easing: ease-out; } }
+        }
+    ]
+}
+
+component FormRow inherits HorizontalLayout {
+    in property <string> label;
+    spacing: 12px;
+    Text { text: root.label; width: 92px; color: Theme.muted; font-size: 12.5px; horizontal-alignment: right; vertical-alignment: center; }
+    @children
+}
+
+component WorkspaceTab inherits Rectangle {
+    in property <string> title;
+    in property <int> kind;
+    in property <bool> active;
+    in property <bool> busy;
+    in property <bool> dirty;
+    callback selected;
+    callback closed;
+    min-width: 120px;
+    max-width: 230px;
+    height: 28px;
+    border-radius: 6px;
+    background: root.active ? Theme.ink.with-alpha(0.078) : hit.has-hover ? Theme.ink.with-alpha(0.031) : transparent;
+    animate background { duration: 120ms; easing: ease; }
+    HorizontalLayout {
+        padding-left: 10px; padding-right: 4px; spacing: 7px;
+        Image {
+            width: 14px; height: 14px; y: (parent.height - 14px) / 2;
+            source: root.kind == 0 ? @image-url("icons/file-code.svg") : root.kind == 2 ? @image-url("icons/eye.svg") : root.kind == 3 ? @image-url("icons/key.svg") : root.kind == 4 ? @image-url("icons/square-function.svg") : @image-url("icons/table-2.svg");
+            colorize: root.active ? Theme.accent : Theme.muted;
+        }
+        Text { text: root.title; color: root.active ? Theme.text : Theme.muted; font-size: 12.5px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.busy: Spinner { width: 12px; height: 12px; y: (parent.height - 12px) / 2; indeterminate: true; }
+        if root.dirty && !root.busy: Rectangle { width: 7px; height: 7px; y: (parent.height - 7px) / 2; border-radius: 3.5px; background: Theme.accent; }
+        IconButton { icon: @image-url("icons/x.svg"); icon-size: 12px; width: 20px; height: 20px; y: 4px; enabled: !root.busy; opacity: root.active || hit.has-hover || self.has-hover ? 1 : 0; tip: "Close " + root.title; clicked => { root.closed(); } }
+    }
+    hit := TouchArea { width: parent.width - 28px; mouse-cursor: pointer; clicked => { root.selected(); } }
+    accessible-role: tab;
+    accessible-label: root.title;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.active;
+    accessible-action-default => { root.selected(); }
+}
+
+component CodeEditor inherits Rectangle {
+    in-out property <string> text;
+    in property <string> line-numbers: "1";
+    in property <int> focus-request;
+    changed focus-request => { if root.visible { input.focus(); } }
+    in property <bool> enabled: true;
+    in property <[SqlToken]> tokens;
+    in property <Caret> caret;
+    out property <int> cursor: input.cursor-position-byte-offset;
+    out property <int> anchor: input.anchor-position-byte-offset;
+    callback edited(string);
+    callback selection(int, int);
+    callback command(string);
+    background: Theme.content;
+    forward-focus: input;
+    measure := TextInput { visible: false; enabled: false; single-line: false; wrap: no-wrap; text: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\n0\n0\n0\n0\n0\n0\n0\n0\n0"; font-family: Theme.mono; font-size: 13px; }
+    property <length> char-width: measure.preferred-width / 100;
+    property <length> line-height: measure.preferred-height / 10;
+    HorizontalLayout {
+        padding-top: 8px; padding-bottom: 8px; padding-right: 8px;
+        Rectangle { width: 44px; clip: true;
+            Text { text: root.line-numbers; y: scroll.viewport-y + 4px; x: 0px; width: parent.width - 10px; height: input.preferred-height; font-family: Theme.mono; font-size: 13px; color: Theme.faint; horizontal-alignment: right; }
+        }
+        scroll := ScrollView {
+            viewport-width: max(self.visible-width, input.preferred-width + 16px);
+            viewport-height: max(self.visible-height, input.preferred-height + 16px);
+            if input.has-focus: Rectangle {
+                x: 0px; y: 4px + root.caret.line * root.line-height;
+                width: max(scroll.visible-width, input.preferred-width + 16px); height: root.line-height;
+                background: Theme.ink.with-alpha(0.031);
+            }
+            input := TextInput {
+                x: 6px; y: 4px;
+                width: max(scroll.visible-width - 16px, self.preferred-width);
+                height: max(scroll.visible-height - 16px, self.preferred-height);
+                text <=> root.text;
+                accessible-role: text-input;
+                accessible-label: "SQL editor";
+                accessible-value <=> self.text;
+                enabled: root.enabled;
+                single-line: false;
+                wrap: no-wrap;
+                font-family: Theme.mono;
+                font-size: 13px;
+                color: transparent;
+                selection-background-color: Theme.accent.with-alpha(0.35);
+                selection-foreground-color: transparent;
+                edited => { root.edited(self.text); }
+                cursor-position-changed => { root.selection(input.cursor-position-byte-offset, input.anchor-position-byte-offset); }
+                key-pressed(event) => {
+                    if event.modifiers.control || event.modifiers.meta {
+                        if event.text == Key.Return { root.command(event.modifiers.shift ? "run-all" : "run"); return accept; }
+                        if event.text == " " { root.command("complete"); return accept; }
+                        if event.text == "s" { root.command("save"); return accept; }
+                    }
+                    return reject;
+                }
+            }
+            for t in root.tokens: Text {
+                x: 6px + t.col * root.char-width; y: 4px + t.line * root.line-height;
+                text: t.text; font-family: Theme.mono; font-size: 13px; font-italic: t.kind == 4;
+                color: t.kind == 1 ? Theme.keyword : t.kind == 2 ? Theme.string : t.kind == 3 ? Theme.number : t.kind == 4 ? Theme.comment : Theme.text;
+            }
+            if input.has-focus: Rectangle {
+                x: 6px + root.caret.col * root.char-width; y: 4px + root.caret.line * root.line-height;
+                width: 2px; height: root.line-height; background: Theme.accent;
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Pueo";
+    icon: @image-url("../data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg");
+    preferred-width: 1320px; preferred-height: 840px;
+    min-width: 960px; min-height: 620px;
+    background: Theme.content;
+    default-font-family: Theme.ui;
+    default-font-size: 13px;
+    property <ColorScheme> scheme: Palette.color-scheme;
+    changed scheme => { if Theme.appearance == 0 && self.scheme != ColorScheme.unknown { Theme.system-dark = self.scheme == ColorScheme.dark; } }
+    init => { Theme.system-dark = Palette.color-scheme != ColorScheme.light; }
+    public function set-appearance(mode: int) {
+        Theme.appearance = mode;
+        Palette.color-scheme = mode == 1 ? ColorScheme.light : mode == 2 ? ColorScheme.dark : ColorScheme.unknown;
+    }
+
+    in property <[ConnectionItem]> connections;
+    in property <[ConnectionItem]> sessions;
+    in property <[ConnectionItem]> palette-items;
+    in property <[string]> group-names;
+    in property <[string]> color-names;
+    in property <[string]> tag-names;
+    in property <[string]> ssh-auth-names;
+    in property <[string]> filter-ops;
+    in property <[ObjectItem]> objects;
+    in property <[string]> databases;
+    in property <[TabItem]> tabs;
+    in property <[string]> columns;
+    in property <[RowItem]> rows;
+    in property <[FieldItem]> fields;
+    in property <[string]> results;
+    in property <[string]> library-items;
+    in property <[string]> completions;
+    in property <[string]> cell-choices;
+    in property <[ConsoleEntry]> console-entries;
+    in-out property <int> console-seq: -1;
+    in-out property <int> console-shown-filter: -1;
+    in property <string> version;
+    in-out property <bool> about-dialog;
+    in-out property <bool> shortcuts-dialog;
+    in-out property <bool> edit-dispatching;
+    in-out property <int> editor-focus-request;
+    in-out property <string> hover-name;
+    in-out property <length> hover-y;
+    in property <string> session-name;
+    in property <string> server-info;
+    in property <string> pill;
+    in property <color> pill-color: Theme.accent;
+    in property <string> row-summary;
+    in property <string> database;
+    in-out property <int> database-index;
+    in property <int> result-index;
+    in property <string> page-label;
+    in property <string> status: "Ready";
+    in property <string> notice;
+    in property <bool> notice-error;
+    in property <bool> connected;
+    in property <bool> busy;
+    in property <bool> editable;
+    in property <bool> query;
+    in property <bool> table;
+    in property <bool> is-key;
+    in property <int> active-session: -1;
+    in property <int> active-tab: -1;
+    in property <int> selected-row: -1;
+    in property <int> selected-column: -1;
+    in property <int> selected-count: 0;
+    in property <int> pending;
+    in property <bool> can-prev;
+    in property <bool> can-next;
+    in property <bool> truncated;
+    in-out property <bool> home: true;
+    in-out property <bool> sidebar-open: true;
+    in-out property <length> sidebar-width: 260px;
+    in-out property <int> sidebar-tab: 0;
+    in-out property <bool> inspector-open: false;
+    in-out property <bool> console-open: false;
+    in-out property <length> console-height: 200px;
+    in-out property <length> editor-height: 240px;
+    in-out property <bool> filters-open: false;
+    in-out property <bool> library-open: false;
+    in-out property <int> console-filter: 0;
+    in-out property <int> library-mode: 0;
+    in-out property <string> connection-search;
+    in-out property <string> object-search;
+    in-out property <string> library-search;
+    in-out property <string> palette-search;
+    in-out property <int> palette-index: 0;
+    in-out property <bool> palette-open: false;
+    in-out property <string> sql;
+    in property <string> line-numbers: "1";
+    in-out property <string> filter;
+    in-out property <string> save-name;
+    in-out property <int> view: 0;
+    in-out property <int> cursor;
+    in-out property <int> anchor;
+    in-out property <bool> connection-dialog: false;
+    in-out property <bool> engine-picker: false;
+    in-out property <int> picked-engine: 0;
+    in-out property <bool> group-dialog: false;
+    in-out property <bool> cell-dialog: false;
+    in-out property <bool> save-dialog: false;
+    in-out property <bool> confirm-dialog: false;
+    in-out property <bool> auth-dialog: false;
+    in property <[string]> schemas;
+    in-out property <int> schema-index;
+    in-out property <bool> clone-dialog: false;
+    in-out property <string> clone-name;
+    in-out property <string> clone-source;
+    in-out property <bool> clone-data: true;
+    in-out property <int> clone-index: -1;
+    in-out property <bool> form-ok: false;
+    in-out property <string> cell-choice-search;
+    in-out property <string> tip-text;
+    in-out property <string> tip-shown;
+    in-out property <length> tip-x;
+    in-out property <length> tip-y;
+    in-out property <bool> import-dialog: false;
+    in-out property <int> import-step: 0;
+    in property <[ImportSource]> import-sources;
+    in property <[ImportItem]> import-items;
+    in property <int> import-count;
+    in property <string> import-title;
+    in property <string> import-note;
+    in-out property <string> auth-title;
+    in-out property <string> auth-text;
+    in-out property <string> auth-detail;
+    in-out property <string> auth-name;
+    in-out property <string> auth-password;
+    in-out property <bool> auth-remember: true;
+    in-out property <bool> auth-keychain: true;
+    in-out property <bool> completion-open: false;
+    in-out property <ConnectionForm> form;
+    in-out property <string> group-name;
+    in-out property <int> group-index: -1;
+    in-out property <int> group-color: 6;
+    in-out property <int> group-icon-kind: 0;
+    in-out property <string> group-icon-value;
+    in-out property <string> cell-title;
+    in-out property <string> cell-value;
+    in-out property <bool> cell-null;
+    in-out property <string> confirm-title;
+    in-out property <string> confirm-text;
+    in-out property <string> confirm-action: "Discard and continue";
+    in-out property <bool> form-busy;
+    in-out property <string> form-notice;
+    in-out property <int> export-format: 0;
+    in-out property <string> filter-column;
+    in-out property <[FilterRule]> filter-rules;
+    in property <[bool]> filter-op-values;
+    in-out property <bool> filter-match-all: true;
+    in-out property <bool> filter-sql-mode: false;
+    in-out property <int> filter-op: 0;
+    in-out property <string> filter-value;
+    in-out property <[length]> column-widths;
+    in-out property <string> drag-id;
+    in-out property <length> drag-y;
+    in-out property <string> drop-id;
+    in-out property <bool> drop-after;
+    in-out property <ConnectionItem> drag-item;
+    in-out property <length> drag-x;
+    in-out property <length> drag-width;
+    in-out property <length> drag-offset;
+    in-out property <length> drop-line-y;
+    in-out property <int> edit-row: -1;
+    in-out property <int> edit-col: -1;
+    function commit-cell(column: int, value: string, original: string, was-null: bool) {
+        root.edit-row = -1;
+        if value != original || (was-null && value != "") {
+            root.field-edit(column, value, false);
+        }
+    }
+
+    in-out property <string> clipboard-content;
+    public function copy-grid() { clipboard-input.select-all(); clipboard-input.copy(); }
+    clipboard-input := TextEdit { visible: false; text: root.clipboard-content; }
+    // Reads the clipboard: paste into a hidden field and hand the text over.
+    function paste-grid() {
+        paste-input.text = "";
+        paste-input.paste();
+        root.paste-text(paste-input.text);
+        paste-input.text = "";
+    }
+    paste-input := TextInput { visible: false; single-line: false; width: 0px; height: 0px; }
+    callback cell-select(int, int, int);
+    callback paste-text(string);
+    callback command(string);
+    callback connection-action(string, string);
+    pure callback highlight(string) -> [SqlToken];
+    pure callback caret-at(string, int) -> Caret;
+    callback session-action(int, string);
+    callback object-action(int, string);
+    callback tab-action(int, string);
+    callback cell-action(int, int, bool);
+    callback field-edit(int, string, bool);
+    callback form-action(string);
+    callback library-action(int, string);
+    callback result-selected(int);
+    callback completion-selected(int);
+    callback search-changed(string);
+
+    changed connection-dialog => { if root.connection-dialog && root.form.id == "" { root.engine-picker = true; root.picked-engine = root.form.kind; } }
+
+    function open-palette() {
+        if !root.menu-ready { return; }
+        root.palette-search = "";
+        root.search-changed("palette");
+        root.palette-open = true;
+    }
+    function palette-open-selected() {
+        if root.palette-index >= 0 && root.palette-index < root.palette-items.length {
+            root.palette-open = false;
+            root.connection-action(root.palette-items[root.palette-index].id, "connect");
+        }
+    }
+    function show-library(tab: int) {
+        root.sidebar-open = true;
+        root.sidebar-tab = tab;
+        root.library-mode = tab == 1 ? 1 : 0;
+        root.command("library");
+    }
+
+    property <bool> menu-ready: !(root.connection-dialog || root.group-dialog || root.cell-dialog || root.save-dialog || root.confirm-dialog || root.about-dialog || root.shortcuts-dialog || root.palette-open || root.auth-dialog || root.import-dialog || root.clone-dialog);
+    MenuBar {
+        Menu { title: "File";
+            MenuItem { title: "New Connection…"; shortcut: @keys(Control + N); enabled: root.menu-ready; activated => { root.command("new-connection"); } }
+            MenuItem { title: "Open Connection…"; shortcut: @keys(Control + K); enabled: root.menu-ready; activated => { root.open-palette(); } }
+            MenuItem { title: "Open SQLite File…"; shortcut: @keys(Control + O); enabled: root.menu-ready; activated => { root.command("open-file"); } }
+            MenuSeparator { }
+            MenuItem { title: "Import Connections…"; enabled: root.menu-ready; activated => { root.command("import-open"); } }
+            MenuItem { title: "Export Connections…"; enabled: root.menu-ready; activated => { root.command("export-connections"); } }
+            MenuSeparator { }
+            MenuItem { title: "New Query Tab"; shortcut: @keys(Control + T); enabled: root.connected && root.menu-ready; activated => { root.command("new-query"); } }
+            MenuItem { title: root.query ? "Save Query…" : "Commit Changes"; shortcut: @keys(Control + S); enabled: !root.home && root.active-tab >= 0 && root.menu-ready && !root.busy; activated => { root.command("save"); } }
+            Menu { title: "Export Data";
+                MenuItem { title: "CSV…"; enabled: !root.home && root.columns.length > 0 && !root.busy && root.menu-ready; activated => { root.export-format = 0; root.command("export"); } }
+                MenuItem { title: "JSON…"; enabled: !root.home && root.columns.length > 0 && !root.busy && root.menu-ready; activated => { root.export-format = 1; root.command("export"); } }
+                MenuItem { title: "SQL INSERTs…"; enabled: !root.home && root.columns.length > 0 && !root.busy && root.menu-ready; activated => { root.export-format = 2; root.command("export"); } }
+            }
+            MenuItem { title: "Import CSV…"; enabled: !root.home && root.table && !root.is-key && root.editable && !root.busy && root.menu-ready; activated => { root.command("import"); } }
+            MenuSeparator { }
+            MenuItem { title: "Close Active Tab"; shortcut: @keys(Control + W); enabled: !root.home && root.active-tab >= 0 && root.menu-ready; activated => { root.command("close-tab"); } }
+            MenuItem { title: "Close Pueo"; shortcut: @keys(Control + Q); enabled: root.menu-ready; activated => { root.command("quit"); } }
+        }
+        Menu { title: "Edit";
+            MenuItem { title: "Undo"; shortcut: @keys(Control + Z); enabled: !root.edit-dispatching; activated => { root.command("edit:undo"); } }
+            MenuItem { title: "Redo"; shortcut: @keys(Control + Shift + Z); enabled: !root.edit-dispatching; activated => { root.command("edit:redo"); } }
+            MenuSeparator { }
+            MenuItem { title: "Cut"; shortcut: @keys(Control + X); enabled: !root.edit-dispatching; activated => { root.command("edit:cut"); } }
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: !root.edit-dispatching; activated => { root.command("edit:copy"); } }
+            MenuItem { title: "Paste"; shortcut: @keys(Control + V); enabled: !root.edit-dispatching; activated => { root.command("edit:paste"); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: !root.edit-dispatching; activated => { root.command("edit:select-all"); } }
+            MenuSeparator { }
+            MenuItem { title: "Copy Selected Row as TSV"; enabled: !root.home && root.selected-row >= 0 && root.menu-ready; activated => { root.command("copy"); } }
+            MenuItem { title: "Add Row"; shortcut: @keys(Control + I); enabled: !root.home && root.editable && !root.busy && root.menu-ready; activated => { root.command("add-row"); } }
+            MenuItem { title: "Duplicate Row"; enabled: !root.home && root.editable && root.selected-row >= 0 && !root.busy && root.menu-ready; activated => { root.command("duplicate-row"); } }
+            MenuItem { title: "Mark Row for Deletion"; enabled: !root.home && root.editable && root.selected-row >= 0 && !root.busy && root.menu-ready; activated => { root.command("delete-row"); } }
+            MenuItem { title: "Discard Pending Edits"; enabled: !root.home && root.pending > 0 && !root.busy && root.menu-ready; activated => { root.command("discard"); } }
+        }
+        Menu { title: "View";
+            Menu { title: "Appearance";
+                MenuItem { title: "System"; checkable: true; checked: Theme.appearance == 0; activated => { root.command("appearance:0"); } }
+                MenuItem { title: "Light"; checkable: true; checked: Theme.appearance == 1; activated => { root.command("appearance:1"); } }
+                MenuItem { title: "Dark"; checkable: true; checked: Theme.appearance == 2; activated => { root.command("appearance:2"); } }
+            }
+            MenuItem { title: "Connections"; shortcut: @keys(Control + "0"); enabled: root.menu-ready; activated => { root.home = true; } }
+            MenuItem { title: "Sidebar"; shortcut: @keys(F9); checkable: true; checked: root.sidebar-open; enabled: !root.home && root.menu-ready; activated => { root.sidebar-open = !root.sidebar-open; } }
+            MenuItem { title: "Row Inspector"; shortcut: @keys(Control + Shift + I); checkable: true; checked: root.inspector-open; enabled: !root.home && root.active-tab >= 0 && root.menu-ready; activated => { root.inspector-open = !root.inspector-open; } }
+            MenuItem { title: "Console"; shortcut: @keys(Control + Shift + C); checkable: true; checked: root.console-open; enabled: !root.home && root.menu-ready; activated => { root.console-open = !root.console-open; root.command("console"); } }
+            MenuItem { title: "Filters"; shortcut: @keys(Control + F); checkable: true; checked: root.filters-open; enabled: !root.home && root.table && !root.is-key && root.menu-ready; activated => { root.filters-open = !root.filters-open; } }
+            MenuSeparator { }
+            MenuItem { title: "Data"; enabled: !root.home && root.table && !root.busy && root.menu-ready; activated => { root.command("view:0"); } }
+            MenuItem { title: "Structure"; enabled: !root.home && root.table && !root.is-key && !root.busy && root.menu-ready; activated => { root.command("view:1"); } }
+            MenuItem { title: "Indexes"; enabled: !root.home && root.table && !root.is-key && !root.busy && root.menu-ready; activated => { root.command("view:2"); } }
+            MenuSeparator { }
+            MenuItem { title: "Refresh"; shortcut: @keys(Control + R); enabled: !root.home && !root.busy && root.menu-ready; activated => { root.command("refresh"); } }
+        }
+        Menu { title: "Query";
+            MenuItem { title: "Run Statement or Selection"; shortcut: @keys(Control + Return); enabled: !root.home && root.query && !root.busy && root.menu-ready; activated => { root.command("run"); } }
+            MenuItem { title: "Run All Statements"; shortcut: @keys(Control + Shift + Return); enabled: !root.home && root.query && !root.busy && root.menu-ready; activated => { root.command("run-all"); } }
+            MenuItem { title: "Stop Query"; shortcut: @keys(Control + "."); enabled: !root.home && root.busy && root.menu-ready; activated => { root.command("stop"); } }
+            MenuItem { title: "Autocomplete"; shortcut: @keys(Control + " "); enabled: !root.home && root.query && root.menu-ready; activated => { root.command("complete"); } }
+            MenuSeparator { }
+            MenuItem { title: "Query History"; enabled: !root.home && root.connected && root.menu-ready; activated => { root.show-library(2); } }
+            MenuItem { title: "Saved Queries"; enabled: !root.home && root.connected && root.menu-ready; activated => { root.show-library(1); } }
+        }
+        Menu { title: "Connection";
+            MenuItem { title: "Open Connection…"; shortcut: @keys(Control + K); enabled: root.menu-ready; activated => { root.open-palette(); } }
+            MenuItem { title: "Edit Active Connection…"; enabled: root.connected && root.menu-ready; activated => { root.command("edit-connection"); } }
+            MenuItem { title: "Refresh Objects"; enabled: root.connected && !root.busy && root.menu-ready; activated => { root.command("objects"); } }
+            MenuSeparator { }
+            MenuItem { title: "Disconnect"; shortcut: @keys(Control + Shift + W); enabled: root.connected && !root.busy && root.menu-ready; activated => { root.command("close-connection"); } }
+        }
+        Menu { title: "Navigate";
+            MenuItem { title: "Previous Page"; enabled: !root.home && root.can-prev && !root.busy && root.menu-ready; activated => { root.command("prev"); } }
+            MenuItem { title: "Next Page"; enabled: !root.home && root.can-next && !root.busy && root.menu-ready; activated => { root.command("next"); } }
+            MenuSeparator { }
+            for session[i] in root.sessions: MenuItem { title: session.name; enabled: root.menu-ready; activated => { root.session-action(i,"switch"); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Previous Tab"; shortcut: @keys(Control + Shift + LeftArrow); enabled: !root.home && root.tabs.length > 1 && root.menu-ready; activated => { root.command("previous-tab"); } }
+            MenuItem { title: "Next Tab"; shortcut: @keys(Control + Shift + RightArrow); enabled: !root.home && root.tabs.length > 1 && root.menu-ready; activated => { root.command("next-tab"); } }
+        }
+        Menu { title: "Help";
+            MenuItem { title: "Keyboard Shortcuts"; enabled: root.menu-ready; activated => { root.shortcuts-dialog = true; } }
+            MenuItem { title: "Pueo Source and Documentation"; activated => { root.command("documentation"); } }
+            MenuItem { title: "About Pueo"; enabled: root.menu-ready; activated => { root.about-dialog = true; } }
+        }
+    }
+    forward-focus: shortcuts;
+    shortcuts := FocusScope {
+    key-pressed(event) => {
+        if event.text == Key.Escape {
+            if !root.form-busy { root.connection-dialog = false; }
+            root.cell-dialog = false; root.group-dialog = false; root.save-dialog = false; root.about-dialog = false; root.shortcuts-dialog = false; root.confirm-dialog = false; root.completion-open = false; root.palette-open = false;
+            if root.auth-dialog { root.command("auth-cancel"); }
+            root.import-dialog = false; root.clone-dialog = false;
+            return accept;
+        }
+        if !root.menu-ready { return reject; }
+        if event.modifiers.control || event.modifiers.meta {
+            if event.text == "n" { root.command("new-connection"); return accept; }
+            if event.text == "k" { root.open-palette(); return accept; }
+            if event.text == "t" { root.command("new-query"); return accept; }
+            if event.text == "w" { root.command(event.modifiers.shift ? "close-connection" : "close-tab"); return accept; }
+            if event.text == "0" { root.home = true; return accept; }
+            if event.text == "1" || event.text == "2" || event.text == "3" || event.text == "4" || event.text == "5" || event.text == "6" || event.text == "7" || event.text == "8" || event.text == "9" { root.command("session:" + event.text); return accept; }
+            if event.text == "q" { root.command("quit"); return accept; }
+            if event.text == "r" { root.command("refresh"); return accept; }
+            if event.text == "s" { root.command("save"); return accept; }
+            if event.text == "f" && root.table && !root.is-key { root.filters-open = !root.filters-open; return accept; }
+            if event.text == "i" { if event.modifiers.shift { root.inspector-open = !root.inspector-open; } else { root.command("add-row"); } return accept; }
+            if event.text == "c" && event.modifiers.shift { root.console-open = !root.console-open; root.command("console"); return accept; }
+            if event.text == "." { root.command("stop"); return accept; }
+            if event.text == "c" && !event.modifiers.shift && !root.home && root.selected-row >= 0 { root.command("copy"); return accept; }
+            if event.text == "v" && !root.home && root.editable && !root.busy { root.paste-grid(); return accept; }
+            if event.text == Key.Return { root.command(event.modifiers.shift ? "run-all" : "run"); return accept; }
+        }
+        if (event.text == Key.Delete || event.text == Key.Backspace) && !root.home && root.editable && root.selected-row >= 0 && !root.busy {
+            root.command("delete-row");
+            return accept;
+        }
+        if event.text == Key.Return && !root.home && root.editable && root.selected-row >= 0 && root.selected-column >= 0 && root.edit-row < 0 {
+            root.edit-row = root.selected-row; root.edit-col = root.selected-column;
+            return accept;
+        }
+        if event.text == Key.F5 { root.command("refresh"); return accept; }
+        if event.text == Key.F9 { root.sidebar-open = !root.sidebar-open; return accept; }
+        return reject;
+    }
+
+    HorizontalLayout {
+        spacing: 0px;
+        // Session rail: Pueo's signature, one avatar per open connection.
+        Rectangle {
+            width: 56px; background: Theme.rail;
+            VerticalLayout {
+                padding-top: 12px; padding-bottom: 12px; spacing: 10px; alignment: start;
+                Rectangle {
+                    height: 40px;
+                    Rectangle {
+                        x: (parent.width - 40px) / 2; width: 40px; height: 40px; border-radius: 10px;
+                        background: root.home ? Theme.ink.with-alpha(0.078) : home-hit.has-hover ? Theme.ink.with-alpha(0.039) : transparent;
+                        animate background { duration: 120ms; easing: ease; }
+                        Image { source: @image-url("../data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg"); width: 30px; height: 30px; x: 5px; y: 5px; image-fit: contain; }
+                    }
+                    home-hit := TouchArea { mouse-cursor: pointer; clicked => { root.home = true; }
+                        changed has-hover => { if self.has-hover { root.hover-name = "Connections"; root.hover-y = self.absolute-position.y + 3px; } else { root.hover-name = ""; } }
+                    }
+                    accessible-role: button; accessible-label: "Connections";
+                }
+                Rectangle { height: 1px; Rectangle { x: 14px; width: parent.width - 28px; background: Theme.ink.with-alpha(0.078); } }
+                for s[i] in root.sessions: Rectangle {
+                    height: 40px;
+                    property <bool> current: i == root.active-session && !root.home;
+                    Rectangle { x: 0px; y: 10px; width: 3px; height: 20px; border-radius: 1.5px; background: current ? Theme.accent : transparent; }
+                    Rectangle {
+                        x: (parent.width - 36px) / 2; y: 2px; width: 36px; height: 36px; border-radius: 18px;
+                        background: current ? s.tint.with-alpha(0.35) : s.tint.with-alpha(0.18);
+                        animate background, border-width { duration: 120ms; easing: ease; }
+                        border-width: current ? 2px : 0px; border-color: s.tint;
+                        Text { text: s.short-name; color: s.tint.brighter(0.4); font-size: 12px; font-weight: 700; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    ContextMenuArea { Menu {
+                        MenuItem { title: "New Query"; activated => { root.session-action(i, "new-query"); } }
+                        MenuSeparator { }
+                        MenuItem { title: "Close Connection"; activated => { root.session-action(i, "close"); } }
+                    } }
+                    TouchArea { mouse-cursor: pointer;
+                        clicked => { root.session-action(i, "switch"); }
+                        changed has-hover => { if self.has-hover { root.hover-name = s.name; root.hover-y = self.absolute-position.y + 3px; } else { root.hover-name = ""; } }
+                    }
+                    accessible-role: button; accessible-label: "Switch to " + s.name;
+                }
+                Rectangle {
+                    height: 40px;
+                    IconButton { x: (parent.width - 32px) / 2; y: 4px; width: 32px; height: 32px; icon: @image-url("icons/plus.svg"); tip: "Open connection"; clicked => { root.open-palette(); } }
+                }
+            }
+        }
+
+        // Welcome / connection manager
+        if root.home: HorizontalLayout {
+            spacing: 0px;
+            Rectangle {
+                width: 300px; background: Theme.sidebar;
+                VerticalLayout {
+                    padding: 28px; spacing: 10px;
+                    Rectangle { height: 36px; }
+                    HorizontalLayout { alignment: center; Image { source: @image-url("../data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg"); width: 112px; height: 112px; image-fit: contain; } }
+                    Text { text: "Pueo"; font-size: 36px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                    Text { text: "Version " + root.version; font-size: 14px; color: Theme.muted; horizontal-alignment: center; }
+                    Text { text: "A clear view of your data"; font-size: 13px; color: Theme.accent; horizontal-alignment: center; }
+                    Rectangle { vertical-stretch: 1; }
+                    for action[i] in [
+                        { label: "Create Connection", icon: @image-url("icons/plug.svg"), cmd: "new-connection" },
+                        { label: "Open SQLite File…", icon: @image-url("icons/folder-open.svg"), cmd: "open-file" },
+                        { label: "New Group", icon: @image-url("icons/folder-plus.svg"), cmd: "new-group" },
+                        { label: "Import Connections…", icon: @image-url("icons/download.svg"), cmd: "import-open" },
+                    ]: Rectangle {
+                        height: 44px; border-radius: 22px;
+                        background: act.pressed ? Theme.ink.with-alpha(0.102) : act.has-hover ? Theme.ink.with-alpha(0.071) : Theme.ink.with-alpha(0.039);
+                        animate background { duration: 120ms; easing: ease; }
+                        border-width: 1px; border-color: Theme.ink.with-alpha(0.059);
+                        HorizontalLayout { padding-left: 18px; spacing: 12px;
+                            Image { source: action.icon; width: 18px; height: 18px; y: (parent.height - 18px) / 2; colorize: i == 0 ? Theme.accent : Theme.icon; }
+                            Text { text: action.label; font-size: 14px; color: Theme.text; vertical-alignment: center; }
+                        }
+                        act := TouchArea { mouse-cursor: pointer; clicked => { root.command(action.cmd); } }
+                        accessible-role: button; accessible-label: action.label;
+                    }
+                }
+            }
+            VerticalLayout {
+                padding: 22px; padding-top: 18px; spacing: 14px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle {
+                        width: 38px; height: 38px; border-radius: 19px;
+                        background: add-hit.has-hover ? Theme.ink.with-alpha(0.102) : Theme.ink.with-alpha(0.051); border-width: 1px; border-color: Theme.ink.with-alpha(0.071);
+                        Image { source: @image-url("icons/plus.svg"); width: 18px; height: 18px; x: 10px; y: 10px; colorize: Theme.icon; }
+                        add-hit := TouchArea { mouse-cursor: pointer; clicked => { root.command("new-connection"); } }
+                        accessible-role: button; accessible-label: "New connection";
+                    }
+                    Field {
+                        height: 38px; round: true; has-icon: true; icon: @image-url("icons/search.svg"); font-size: 14px;
+                        placeholder: "Search for connection…";
+                        text <=> root.connection-search;
+                        edited => { root.search-changed("connections"); }
+                    }
+                }
+                if root.connections.length == 0: VerticalLayout {
+                    alignment: center; spacing: 10px; vertical-stretch: 1;
+                    Text { text: root.connection-search == "" ? "No connections yet" : "No matching connections"; font-size: 20px; font-weight: 600; color: Theme.text; horizontal-alignment: center; }
+                    Muted { text: "Connect to PostgreSQL, MySQL, SQLite, or Redis."; horizontal-alignment: center; }
+                    HorizontalLayout { alignment: center; Btn { text: "Create Connection"; primary: true; clicked => { root.command("new-connection"); } } }
+                }
+                if root.connections.length > 0: ListView {
+                    vertical-stretch: 1;
+                    for c in root.connections: crow := Rectangle {
+                        // Measured through row-hit: a ListView row's own absolute-position counts its offset twice.
+                        property <length> top: row-hit.absolute-position.y;
+                        property <bool> drop-here: root.drag-id != "" && root.drag-y >= self.top && root.drag-y < self.top + self.height;
+                        property <bool> lower-half: root.drag-y >= self.top + self.height / 2;
+                        changed drop-here => { if self.drop-here { root.drop-id = c.id; root.drop-after = self.lower-half; root.drop-line-y = self.lower-half ? self.top + self.height : self.top; } }
+                        changed lower-half => { if self.drop-here { root.drop-after = self.lower-half; root.drop-line-y = self.lower-half ? self.top + self.height : self.top; } }
+                        height: c.header ? 44px : 58px;
+                        property <bool> hovered: row-hit.has-hover && root.drag-id == "";
+                        opacity: root.drag-id == c.id ? 0.4 : 1;
+                        animate opacity { duration: 120ms; }
+                        Rectangle {
+                            y: 2px; height: parent.height - 4px; border-radius: 8px; clip: true;
+                            background: crow.hovered ? Theme.ink.with-alpha(0.039) : transparent;
+                            animate background { duration: 120ms; easing: ease; }
+                            // A very light left-to-right wash of the connection's colour.
+                            if !c.header: Rectangle {
+                                background: @linear-gradient(90deg, c.tint.with-alpha(crow.hovered ? 0.14 : 0.09) 0%, c.tint.with-alpha(0) 75%);
+                            }
+                            // The database logo as a large, tilted, faint watermark bleeding off the row's end.
+                            if !c.header: Image {
+                                property <int> engine: c.badge == "My" ? 1 : c.badge == "Sl" ? 2 : c.badge == "Re" ? 3 : 0;
+                                width: 76px; height: 76px;
+                                x: parent.width - 48px - self.width; y: (parent.height - self.height) / 2 + 6px;
+                                source: self.engine == 1 ? @image-url("../data/icons/symbolic/pueo-mysql-symbolic.svg")
+                                    : self.engine == 2 ? @image-url("../data/icons/symbolic/pueo-sqlite-symbolic.svg")
+                                    : self.engine == 3 ? @image-url("../data/icons/symbolic/pueo-redis-symbolic.svg")
+                                    : @image-url("../data/icons/symbolic/pueo-postgresql-symbolic.svg");
+                                colorize: self.engine == 1 ? #00758f : self.engine == 2 ? #3e7fbf : self.engine == 3 ? #c6302b : #336791;
+                                transform-rotation: -18deg;
+                                opacity: crow.hovered ? 0.22 : 0.14;
+                                animate opacity { duration: 150ms; easing: ease; }
+                            }
+                        }
+                        row-hit := TouchArea {
+                            mouse-cursor: c.header ? pointer : default;
+                            clicked => { if c.header { root.connection-action(c.id, "group-toggle"); } }
+                            double-clicked => { if !c.header { root.connection-action(c.id, "connect"); } }
+                        HorizontalLayout {
+                            padding-left: 4px; padding-right: 10px; spacing: 10px;
+                            Rectangle {
+                                width: 16px;
+                                Image { source: @image-url("icons/grip-vertical.svg"); width: 14px; height: 14px; x: 1px; y: (parent.height - 14px) / 2; colorize: Theme.faint; visible: row-hit.has-hover || cgrip.has-hover || root.drag-id == c.id; }
+                                cgrip := TouchArea {
+                                    mouse-cursor: self.pressed ? grabbing : grab;
+                                    moved => {
+                                        if self.pressed && root.drag-id == "" && abs(self.mouse-y - self.pressed-y) > 4px {
+                                            root.drag-item = c;
+                                            root.drag-x = row-hit.absolute-position.x;
+                                            root.drag-width = crow.width;
+                                            root.drag-offset = self.absolute-position.y + self.pressed-y - crow.top;
+                                            root.drag-id = c.id; root.drop-id = "";
+                                        }
+                                        if root.drag-id != "" { root.drag-y = self.absolute-position.y + self.mouse-y; }
+                                    }
+                                    pointer-event(e) => {
+                                        if e.kind == PointerEventKind.up && root.drag-id != "" {
+                                            if root.drop-id != "" && root.drop-id != c.id { root.connection-action(c.id, (root.drop-after ? "drop-after:" : "drop-before:") + root.drop-id); }
+                                            root.drag-id = "";
+                                        }
+                                    }
+                                }
+                                accessible-role: button; accessible-label: "Drag to reorder " + c.name;
+                            }
+                            if c.header: HorizontalLayout {
+                                spacing: 10px;
+                                Image {
+                                    source: @image-url("icons/chevron-down.svg"); width: 14px; height: 14px; y: (parent.height - 14px) / 2; colorize: Theme.muted;
+                                    transform-rotation: c.collapsed ? -90deg : 0deg;
+                                    animate transform-rotation { duration: 150ms; easing: ease; }
+                                }
+                                Rectangle {
+                                    width: 26px; height: 26px; y: (parent.height - 26px) / 2; border-radius: 7px; background: c.tint.with-alpha(0.25);
+                                    if c.icon.width > 0: Image { source: c.icon; width: 18px; height: 18px; x: 4px; y: 4px; image-fit: contain; }
+                                    if c.icon.width <= 0: Text { text: c.symbol != "" ? c.symbol : "▣"; color: c.tint.brighter(0.4); font-size: 13px; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                                Text { text: c.name; font-size: 13px; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                IconButton { y: (parent.height - 28px) / 2; icon: @image-url("icons/pencil.svg"); icon-size: 14px; tip: "Edit group"; opacity: row-hit.has-hover || self.has-hover ? 1 : 0; clicked => { root.connection-action(c.id, "group-edit"); } }
+                            }
+                            if !c.header: HorizontalLayout {
+                                spacing: 12px;
+                                Rectangle { width: 3px; height: 30px; y: (parent.height - 30px) / 2; border-radius: 1.5px; background: c.tint; }
+                                Avatar { y: (parent.height - 36px) / 2; text: c.badge; tone: c.badge-color; }
+                                VerticalLayout {
+                                    alignment: center; spacing: 3px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: c.name; font-size: 14.5px; color: Theme.text; vertical-alignment: center; overflow: elide; }
+                                        if c.tag != "": TagPill { y: 1px; text: c.tag; tone: c.tag-color; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+                                    Text { text: c.subtitle != "" ? c.subtitle : c.kind; font-size: 12.5px; color: Theme.muted; overflow: elide; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 2px; alignment: end;
+                                    opacity: (row-hit.has-hover || cgrip.has-hover) && root.drag-id == "" ? 1 : 0;
+                                    animate opacity { duration: 120ms; }
+                                    IconButton { y: (parent.height - 28px) / 2; icon: @image-url("icons/plug.svg"); icon-size: 15px; tip: "Connect"; clicked => { root.connection-action(c.id, "connect"); } }
+                                    IconButton { y: (parent.height - 28px) / 2; icon: @image-url("icons/pencil.svg"); icon-size: 15px; tip: "Edit"; clicked => { root.connection-action(c.id, "edit"); } }
+                                    IconButton { y: (parent.height - 28px) / 2; icon: @image-url("icons/copy.svg"); icon-size: 15px; tip: "Duplicate"; clicked => { root.connection-action(c.id, "duplicate"); } }
+                                    IconButton { y: (parent.height - 28px) / 2; icon: @image-url("icons/trash-2.svg"); icon-size: 15px; tip: "Delete"; tint: Theme.danger; clicked => { root.connection-action(c.id, "delete"); } }
+                                }
+                            }
+                        }
+                        }
+                        ContextMenuArea {
+                            Menu {
+                                if !c.header: MenuItem { title: "Connect"; activated => { root.connection-action(c.id, "connect"); } }
+                                MenuItem { title: c.header ? "Edit Group…" : "Edit…"; activated => { root.connection-action(c.id, c.header ? "group-edit" : "edit"); } }
+                                if !c.header: MenuItem { title: "Duplicate"; activated => { root.connection-action(c.id, "duplicate"); } }
+                                MenuSeparator { }
+                                MenuItem { title: "Move Up"; activated => { root.connection-action(c.id, c.header ? "group-up" : "up"); } }
+                                MenuItem { title: "Move Down"; activated => { root.connection-action(c.id, c.header ? "group-down" : "down"); } }
+                                if !c.header: MenuSeparator { }
+                                if !c.header: MenuItem { title: "Delete…"; activated => { root.connection-action(c.id, "delete"); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Connected workspace
+        if !root.home: VerticalLayout {
+            spacing: 0px;
+            Rectangle {
+                height: 50px; background: Theme.toolbar;
+                HorizontalLayout {
+                    padding-left: 10px; padding-right: 10px; spacing: 8px; alignment: stretch;
+                    ToolGroup { y: 9px;
+                        IconButton { icon: @image-url("icons/panel-left.svg"); active: root.sidebar-open; tip: "Toggle sidebar"; clicked => { root.sidebar-open = !root.sidebar-open; } }
+                    }
+                    ToolGroup { y: 9px;
+                        IconButton { icon: @image-url("icons/database.svg"); tip: "Open connection (⌘K)"; clicked => { root.open-palette(); } }
+                        IconButton { icon: @image-url("icons/file-code.svg"); tip: "New query (⌘T)"; enabled: root.connected; clicked => { root.command("new-query"); } }
+                        IconButton { icon: @image-url("icons/history.svg"); tip: "Query history"; active: root.sidebar-open && root.sidebar-tab == 2; clicked => { root.show-library(2); } }
+                    }
+                    Rectangle {
+                        y: 9px; height: 32px; horizontal-stretch: 1; border-radius: 16px;
+                        background: pill-hit.has-hover ? root.pill-color.with-alpha(0.42) : root.pill-color.with-alpha(0.32);
+                        border-width: 1px; border-color: root.pill-color.with-alpha(0.55);
+                        HorizontalLayout {
+                            padding-left: 16px; padding-right: 14px; spacing: 10px;
+                            Text { text: root.pill != "" ? root.pill : root.session-name; font-family: Theme.mono; font-size: 12px; color: Theme.text; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                            if root.busy: Spinner { width: 14px; height: 14px; y: 9px; indeterminate: true; }
+                        }
+                        pill-hit := TouchArea { mouse-cursor: pointer; clicked => { root.open-palette(); } }
+                        accessible-role: button; accessible-label: "Connection: " + root.pill;
+                    }
+                    ToolGroup { y: 9px;
+                        IconButton { icon: @image-url("icons/square.svg"); icon-size: 13px; tip: "Stop query (⌘.)"; enabled: root.busy; clicked => { root.command("stop"); } }
+                        IconButton { icon: @image-url("icons/refresh-cw.svg"); tip: "Refresh (⌘R)"; enabled: !root.busy; clicked => { root.command("refresh"); } }
+                        IconButton { icon: @image-url("icons/unplug.svg"); tip: "Disconnect"; enabled: !root.busy; clicked => { root.command("close-connection"); } }
+                    }
+                    ToolGroup { y: 9px;
+                        IconButton { icon: @image-url("icons/panel-bottom.svg"); active: root.console-open; tip: "Console (⇧⌘C)"; clicked => { root.console-open = !root.console-open; root.command("console"); } }
+                        IconButton { icon: @image-url("icons/panel-right.svg"); active: root.inspector-open; tip: "Row inspector (⇧⌘I)"; clicked => { root.inspector-open = !root.inspector-open; } }
+                    }
+                }
+            }
+            Rule { background: Theme.line; }
+            HorizontalLayout {
+                spacing: 0px;
+                if root.sidebar-open: Rectangle {
+                    width: root.sidebar-width; background: Theme.sidebar;
+                    VerticalLayout {
+                        padding-top: 0px; spacing: 8px;
+                        Rectangle {
+                            height: 52px;
+                            background: @linear-gradient(90deg, root.pill-color.with-alpha(0.07) 0%, root.pill-color.with-alpha(0) 100%);
+                            LoadingFx { busy: root.busy; tone: root.pill-color; }
+                            HorizontalLayout {
+                                padding-left: 14px; padding-right: 8px; spacing: 6px;
+                                VerticalLayout {
+                                    alignment: center; spacing: 1px;
+                                    Text { text: root.session-name; font-size: 13.5px; font-weight: 700; color: Theme.text; overflow: elide; }
+                                    Text { text: root.server-info; font-size: 11.5px; color: Theme.muted; overflow: elide; }
+                                }
+                                IconButton { y: 12px; icon: @image-url("icons/refresh-cw.svg"); icon-size: 14px; tip: "Reload items"; enabled: !root.busy; clicked => { root.command("objects"); } }
+                            }
+                            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                        }
+                        HorizontalLayout { padding-left: 10px; padding-right: 10px; alignment: center;
+                            Segmented {
+                                items: ["Items", "Queries", "History"]; current: root.sidebar-tab;
+                                selected(i) => { if i == 0 { root.sidebar-tab = 0; } else { root.show-library(i); } }
+                            }
+                        }
+                        HorizontalLayout { padding-left: 10px; padding-right: 10px;
+                            if root.sidebar-tab == 0: Field {
+                                has-icon: true; icon: @image-url("icons/search.svg");
+                                placeholder: "Search for item…";
+                                text <=> root.object-search;
+                                edited => { root.search-changed("objects"); }
+                                accepted => { root.command("scan"); }
+                            }
+                            if root.sidebar-tab != 0: Field {
+                                has-icon: true; icon: @image-url("icons/search.svg");
+                                placeholder: root.sidebar-tab == 1 ? "Search saved queries…" : "Search history…";
+                                text <=> root.library-search;
+                                edited => { root.command("library"); }
+                            }
+                        }
+                        if root.sidebar-tab == 0 && root.truncated: Muted { x: 12px; text: "More keys exist. Press Return to SCAN."; wrap: word-wrap; }
+                        if root.sidebar-tab == 0: ListView {
+                            vertical-stretch: 1;
+                            for obj in root.objects: Rectangle {
+                                height: obj.header ? 26px : 24px;
+                                Rectangle {
+                                    x: 6px; width: parent.width - 12px; border-radius: 5px;
+                                    background: area.has-hover && !obj.child ? Theme.ink.with-alpha(0.051) : transparent;
+                                    animate background { duration: 120ms; easing: ease; }
+                                }
+                                HorizontalLayout {
+                                    padding-left: obj.header ? 10px : obj.child ? 50px : 22px; padding-right: 12px; spacing: 6px;
+                                    if !obj.child: Rectangle {
+                                        width: 14px;
+                                        Image {
+                                            source: @image-url("icons/chevron-down.svg"); width: 12px; height: 12px; x: 1px; y: (parent.height - 12px) / 2; colorize: Theme.muted;
+                                            transform-rotation: obj.expanded ? 0deg : -90deg;
+                                            animate transform-rotation { duration: 150ms; easing: ease; }
+                                        }
+                                        if !obj.header: TouchArea { mouse-cursor: pointer; clicked => { root.object-action(obj.index, "columns"); } }
+                                    }
+                                    if obj.child: Rectangle {
+                                        width: 14px;
+                                        if obj.primary: Image { source: @image-url("icons/key-round.svg"); width: 12px; height: 12px; y: (parent.height - 12px) / 2; colorize: Theme.warning; }
+                                    }
+                                    if !obj.header && !obj.child: Image {
+                                        width: 14px; height: 14px; y: (parent.height - 14px) / 2;
+                                        source: obj.kind == "view" ? @image-url("icons/eye.svg") : obj.kind == "function" ? @image-url("icons/square-function.svg") : obj.kind == "key" ? @image-url("icons/key.svg") : @image-url("icons/table-2.svg");
+                                        colorize: obj.kind == "view" ? #b48cf2 : obj.kind == "function" ? #6cc4a1 : obj.kind == "key" ? Theme.warning : #6aa5f0;
+                                    }
+                                    Text {
+                                        text: obj.label; overflow: elide; vertical-alignment: center; horizontal-stretch: 1;
+                                        font-family: obj.header ? Theme.ui : Theme.mono;
+                                        font-size: obj.header ? 13px : 12.5px;
+                                        color: Theme.text;
+                                    }
+                                    if obj.pinned: Image { source: @image-url("icons/star.svg"); width: 11px; height: 11px; y: (parent.height - 11px) / 2; colorize: Theme.warning; }
+                                    if obj.header: Text { text: obj.count; color: Theme.faint; font-size: 11.5px; vertical-alignment: center; }
+                                    if obj.child: Text { text: obj.column-type; color: Theme.muted; font-family: Theme.mono; font-size: 12px; vertical-alignment: center; horizontal-alignment: right; overflow: elide; max-width: 140px; }
+                                }
+                                area := TouchArea {
+                                    changed has-hover => {
+                                        if self.has-hover && !obj.header {
+                                            root.tip-text = obj.child ? obj.label + "  " + obj.column-type : obj.detail != "" ? obj.detail + "." + obj.label : obj.label;
+                                            root.tip-x = self.absolute-position.x + 24px;
+                                            root.tip-y = self.absolute-position.y + self.height + 4px;
+                                            tip-timer.running = true;
+                                        } else if !self.has-hover {
+                                            tip-timer.running = false; root.tip-text = ""; root.tip-shown = "";
+                                        }
+                                    }
+                                    x: obj.header || obj.child ? 0px : 40px; width: parent.width - self.x;
+                                    mouse-cursor: obj.child ? default : pointer;
+                                    clicked => { if obj.header { root.object-action(-1, "section:" + obj.section); } else if !obj.child { root.object-action(obj.index, "open"); } }
+                                }
+                                if !obj.header && !obj.child: ContextMenuArea { Menu {
+                                    MenuItem { title: "Open"; activated => { root.object-action(obj.index, "open"); } }
+                                    MenuItem { title: "Open in New Tab"; activated => { root.object-action(obj.index, "open-new"); } }
+                                    if obj.kind == "table" || obj.kind == "view": MenuItem { title: "Open Structure"; activated => { root.object-action(obj.index, "structure"); } }
+                                    MenuItem { title: "Copy Name"; activated => { root.object-action(obj.index, "copy-name"); } }
+                                    MenuSeparator { }
+                                    MenuItem { title: obj.expanded ? "Hide Columns" : "Show Columns"; activated => { root.object-action(obj.index, "columns"); } }
+                                    MenuItem { title: obj.pinned ? "Unpin" : "Pin to Top"; activated => { root.object-action(obj.index, "pin"); } }
+                                    if obj.kind == "table" || obj.kind == "view": MenuSeparator { }
+                                    if obj.kind == "table" || obj.kind == "view": Menu {
+                                        title: "Export";
+                                        MenuItem { title: "CSV…"; activated => { root.object-action(obj.index, "export:0"); } }
+                                        MenuItem { title: "JSON…"; activated => { root.object-action(obj.index, "export:1"); } }
+                                        MenuItem { title: "SQL…"; activated => { root.object-action(obj.index, "export:2"); } }
+                                    }
+                                    if obj.kind == "table": MenuItem { title: "Import…"; activated => { root.object-action(obj.index, "import"); } }
+                                    if obj.kind == "table": MenuSeparator { }
+                                    if obj.kind == "table": MenuItem { title: "Clone…"; activated => { root.object-action(obj.index, "clone"); } }
+                                    if obj.kind == "table": MenuItem { title: "Truncate…"; activated => { root.object-action(obj.index, "truncate"); } }
+                                    if obj.kind == "table" || obj.kind == "view" || obj.kind == "key": MenuItem { title: "Delete…"; activated => { root.object-action(obj.index, "drop"); } }
+                                } }
+                            }
+                        }
+                        if root.sidebar-tab != 0 && root.library-items.length == 0: VerticalLayout {
+                            vertical-stretch: 1; alignment: center; padding: 20px;
+                            Muted { text: root.sidebar-tab == 1 ? "No saved queries yet.\nUse ⌘S in a query tab to save one." : "No queries have been run yet."; horizontal-alignment: center; wrap: word-wrap; }
+                        }
+                        if root.sidebar-tab != 0 && root.library-items.length > 0: ListView {
+                            vertical-stretch: 1;
+                            for item[i] in root.library-items: Rectangle {
+                                height: 30px;
+                                Rectangle { x: 6px; width: parent.width - 12px; border-radius: 5px; background: lib.has-hover ? Theme.ink.with-alpha(0.051) : transparent; animate background { duration: 120ms; easing: ease; } }
+                                HorizontalLayout {
+                                    padding-left: 14px; padding-right: 8px; spacing: 6px;
+                                    Image { source: root.sidebar-tab == 1 ? @image-url("icons/file-code.svg") : @image-url("icons/history.svg"); width: 13px; height: 13px; y: (parent.height - 13px) / 2; colorize: Theme.muted; }
+                                    Text { text: item; font-family: root.sidebar-tab == 1 ? Theme.ui : Theme.mono; font-size: 12px; color: Theme.text; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                                lib := TouchArea { mouse-cursor: pointer; clicked => { root.library-action(i, "load"); } }
+                                if root.sidebar-tab == 1: IconButton { x: parent.width - 32px; y: 3px; width: 24px; height: 24px; icon: @image-url("icons/trash-2.svg"); icon-size: 13px; tint: Theme.danger; tip: "Delete saved query"; opacity: lib.has-hover || self.has-hover ? 1 : 0; clicked => { root.library-action(i, "delete"); } }
+                            }
+                        }
+                        Rule { }
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 10px; padding-bottom: 8px; spacing: 6px; height: 40px;
+                            IconButton { y: 2px; icon: @image-url("icons/plus.svg"); tip: "New query"; clicked => { root.command("new-query"); } }
+                            if root.sidebar-tab == 2: Btn { y: 3px; text: "Clear History"; danger: true; clicked => { root.command("clear-history"); } }
+                            if root.sidebar-tab != 2: Image { source: @image-url("icons/database.svg"); width: 14px; height: 14px; y: 9px; colorize: Theme.muted; }
+                            if root.sidebar-tab != 2 && root.databases.length > 0: Select {
+                                y: 2px; model: root.databases; current-index <=> root.database-index; enabled: !root.busy;
+                                selected(i, value) => { root.command("database:" + value); }
+                            }
+                            if root.sidebar-tab != 2 && root.databases.length == 0: Muted { text: root.database; overflow: elide; }
+                            if root.sidebar-tab != 2 && root.schemas.length > 0: Select {
+                                y: 2px; width: 120px; model: root.schemas; current-index <=> root.schema-index;
+                                selected(i, value) => { root.command("schema:" + (i == 0 ? "*" : value)); }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 1px; background: split.has-hover || split.pressed ? Theme.accent : Theme.line;
+                    split := TouchArea {
+                        x: -3px; width: 7px; mouse-cursor: col-resize;
+                        property <length> start;
+                        property <length> origin;
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.down {
+                                if !root.sidebar-open { root.sidebar-open = true; root.sidebar-width = 180px; }
+                                self.start = root.sidebar-width;
+                                self.origin = self.absolute-position.x + self.mouse-x;
+                            }
+                        }
+                        moved => {
+                            if self.pressed {
+                                root.sidebar-width = clamp(self.start + self.absolute-position.x + self.mouse-x - self.origin, 180px, 560px);
+                            }
+                        }
+                        double-clicked => { root.sidebar-open = !root.sidebar-open; }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 0px;
+                    // Tab strip
+                    Rectangle {
+                        height: 36px; background: Theme.sidebar;
+                        HorizontalLayout {
+                            padding: 4px; padding-left: 6px; spacing: 4px;
+                            for tab[i] in root.tabs: WorkspaceTab {
+                                title: tab.title; kind: tab.kind; active: i == root.active-tab; busy: tab.busy; dirty: tab.dirty;
+                                selected => { root.tab-action(i, "switch"); }
+                                closed => { root.tab-action(i, "close"); }
+                            }
+                            IconButton { icon: @image-url("icons/plus.svg"); icon-size: 15px; tip: "New query tab"; clicked => { root.command("new-query"); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                    Rule { }
+                    if root.active-tab < 0: Rectangle {
+                        background: Theme.content;
+                        VerticalLayout {
+                            alignment: center; spacing: 12px;
+                            HorizontalLayout { alignment: center; Image { source: @image-url("../data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg"); width: 72px; height: 72px; opacity: 0.35; image-fit: contain; } }
+                            Text { text: "Choose a table or write a query"; font-size: 18px; font-weight: 600; color: Theme.text; horizontal-alignment: center; }
+                            Muted { text: "Open an item from the sidebar, or start a new query with ⌘T."; horizontal-alignment: center; }
+                            HorizontalLayout { alignment: center; spacing: 8px;
+                                Btn { text: "New Query"; has-icon: true; icon: @image-url("icons/file-code.svg"); primary: true; clicked => { root.command("new-query"); } }
+                                Btn { text: "Saved Queries"; has-icon: true; icon: @image-url("icons/star.svg"); clicked => { root.show-library(1); } }
+                            }
+                        }
+                    }
+                    if root.active-tab >= 0: VerticalLayout {
+                        spacing: 0px;
+                        if root.query: Rectangle {
+                            height: 40px; background: Theme.toolbar;
+                            HorizontalLayout {
+                                padding-left: 10px; padding-right: 10px; spacing: 6px; alignment: stretch;
+                                Btn { y: 7px; text: "Run"; has-icon: true; icon: @image-url("icons/play.svg"); primary: true; enabled: !root.busy; clicked => { root.command("run"); } }
+                                Btn { y: 7px; text: "Run All"; has-icon: true; icon: @image-url("icons/fast-forward.svg"); enabled: !root.busy; clicked => { root.command("run-all"); } }
+                                Btn { y: 7px; text: "Stop"; has-icon: true; icon: @image-url("icons/square.svg"); enabled: root.busy; clicked => { root.command("stop"); } }
+                                Muted { text: "⌘Return run statement  ·  ⇧⌘Return run all  ·  ⌃Space complete"; font-size: 11.5px; color: Theme.faint; overflow: elide; horizontal-stretch: 1; horizontal-alignment: center; }
+                                IconButton { y: 6px; icon: @image-url("icons/sparkles.svg"); tip: "Autocomplete"; clicked => { root.command("complete"); } }
+                                IconButton { y: 6px; icon: @image-url("icons/save.svg"); tip: "Save query (⌘S)"; clicked => { root.command("save"); } }
+                                IconButton { y: 6px; icon: @image-url("icons/star.svg"); tip: "Saved queries"; active: root.sidebar-open && root.sidebar-tab == 1; clicked => { root.show-library(1); } }
+                            }
+                        }
+                        if root.query: Rule { }
+                        editor := CodeEditor {
+                            visible: root.query; height: root.query ? root.editor-height : 0px;
+                            text <=> root.sql; line-numbers: root.line-numbers; focus-request: root.editor-focus-request;
+                            tokens: root.highlight(root.sql); caret: root.caret-at(root.sql, self.cursor);
+                            edited(text) => { root.command("sql-edited"); }
+                            selection(cursor, anchor) => { root.cursor = cursor; root.anchor = anchor; }
+                            command(action) => { root.command(action); }
+                        }
+                        if root.query && root.completion-open: Rectangle {
+                            height: min(root.completions.length * 26px + 10px, 170px); background: Theme.menu;
+                            border-width: 1px; border-color: Theme.ink.with-alpha(0.102);
+                            ListView {
+                                x: 5px; y: 5px; width: parent.width - 10px; height: parent.height - 10px;
+                                for item[i] in root.completions: Rectangle {
+                                    height: 26px; border-radius: 5px; background: comp.has-hover ? Theme.accent : transparent;
+                                    Text { x: 10px; height: parent.height; text: item; font-family: Theme.mono; font-size: 12.5px; vertical-alignment: center; color: comp.has-hover ? Theme.accent-text : Theme.text; }
+                                    comp := TouchArea { clicked => { root.completion-selected(i); } }
+                                }
+                            }
+                        }
+                        if root.query: Rectangle {
+                            height: 6px; background: Theme.toolbar;
+                            Rectangle { y: 2px; height: 1px; background: esplit.has-hover || esplit.pressed ? Theme.accent : Theme.line; }
+                            esplit := TouchArea {
+                                mouse-cursor: row-resize;
+                                property <length> start;
+                                property <length> origin;
+                                pointer-event(e) => { if e.kind == PointerEventKind.down { self.start = root.editor-height; self.origin = self.absolute-position.y + self.mouse-y; } }
+                                moved => { if self.pressed { root.editor-height = clamp(self.start + self.absolute-position.y + self.mouse-y - self.origin, 80px, 900px); } }
+                            }
+                        }
+                        if root.query && root.results.length > 1: Rectangle {
+                            height: 34px; background: Theme.toolbar;
+                            HorizontalLayout {
+                                padding-left: 10px; padding-right: 10px; spacing: 6px;
+                                Muted { text: "Results"; }
+                                for r[i] in root.results: Btn { y: 4px; text: r; active: i == root.result-index; clicked => { root.result-selected(i); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                        // Slides open under the tab, like the original GTK revealer: a list of rules
+                        // (or a raw WHERE clause), combined with "match all" or "match any".
+                        if root.table && !root.is-key && root.view == 0: Rectangle {
+                            property <length> full: root.filter-sql-mode ? 80px : 52px + min(root.filter-rules.length, 6) * 34px;
+                            height: root.filters-open ? self.full : 0px; background: Theme.toolbar; clip: true;
+                            animate height { duration: 200ms; easing: ease-out; }
+                            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                            VerticalLayout {
+                                height: parent.full - 1px; y: parent.height - parent.full;
+                                padding: 8px; padding-left: 10px; padding-right: 10px; spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 6px; height: 28px;
+                                    Segmented {
+                                        y: 1px; items: ["Rules", "SQL"]; current: root.filter-sql-mode ? 1 : 0;
+                                        selected(i) => { root.filter-sql-mode = i == 1; }
+                                    }
+                                    if !root.filter-sql-mode: Segmented {
+                                        y: 1px; items: ["Match All", "Match Any"]; current: root.filter-match-all ? 0 : 1;
+                                        selected(i) => { root.filter-match-all = i == 0; }
+                                    }
+                                    if !root.filter-sql-mode: Btn { y: 1px; text: "Add Rule"; has-icon: true; icon: @image-url("icons/plus.svg"); clicked => { root.command("filter-add"); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    if root.filter != "": Muted { text: "Filtered"; color: Theme.accent; }
+                                    Btn { y: 1px; text: "Clear"; enabled: !root.busy && (root.filter != "" || root.filter-rules.length > 1); clicked => { root.command("filter-clear"); } }
+                                    Btn { y: 1px; text: "Apply"; primary: true; enabled: !root.busy; clicked => { root.command("filter-apply"); } }
+                                    IconButton { icon: @image-url("icons/x.svg"); icon-size: 14px; tip: "Close filters"; clicked => { root.filters-open = false; } }
+                                }
+                                if root.filter-sql-mode: HorizontalLayout {
+                                    Field {
+                                        text <=> root.filter; mono: true; enabled: !root.busy;
+                                        placeholder: "WHERE clause, e.g.  id > 100 AND name ILIKE '%foo%'";
+                                        accepted => { root.command("filter-apply"); }
+                                        navigate(dir) => { if dir == "escape" { root.command("filter-clear"); root.filters-open = false; return true; } return false; }
+                                    }
+                                }
+                                if !root.filter-sql-mode: VerticalLayout {
+                                    spacing: 6px;
+                                    for rule[i] in root.filter-rules: HorizontalLayout {
+                                        spacing: 6px; height: 28px;
+                                        Select {
+                                            width: 190px; model: root.columns; current-index: rule.col;
+                                            selected(index, value) => { root.filter-rules[i] = { col: index, op: rule.op, value: rule.value }; }
+                                        }
+                                        Select {
+                                            width: 160px; model: root.filter-ops; current-index: rule.op;
+                                            selected(index, value) => { root.filter-rules[i] = { col: rule.col, op: index, value: rule.value }; }
+                                        }
+                                        Field {
+                                            text: rule.value; mono: true; placeholder: "Value";
+                                            enabled: rule.op < 0 || rule.op >= root.filter-op-values.length || root.filter-op-values[rule.op];
+                                            edited(text) => { root.filter-rules[i] = { col: rule.col, op: rule.op, value: text }; }
+                                            accepted => { root.command("filter-apply"); }
+                                            navigate(dir) => { if dir == "escape" { root.command("filter-clear"); root.filters-open = false; return true; } return false; }
+                                        }
+                                        IconButton { icon: @image-url("icons/minus.svg"); icon-size: 14px; tip: "Remove rule"; clicked => { root.command("filter-remove:" + i); } }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 0px;
+                            Rectangle {
+                                background: Theme.content;
+                                grid-menu := ContextMenuArea {
+                                    enabled: false;
+                                    Menu {
+                                        MenuItem { title: "Edit Cell"; enabled: root.editable && root.selected-count <= 1; activated => { root.edit-row = root.selected-row; root.edit-col = root.selected-column; } }
+                                        MenuItem { title: "Set NULL"; enabled: root.editable; activated => { root.command("set-null"); } }
+                                        MenuItem { title: "Row Details"; activated => { root.inspector-open = true; } }
+                                        MenuSeparator { }
+                                        MenuItem { title: "Copy Cell"; activated => { root.command("copy-cell"); } }
+                                        MenuItem { title: root.selected-count > 1 ? "Copy " + root.selected-count + " Rows" : "Copy Row"; activated => { root.command("copy"); } }
+                                        MenuItem { title: "Paste Rows"; enabled: root.editable; activated => { root.paste-grid(); } }
+                                        MenuSeparator { }
+                                        MenuItem { title: root.selected-count > 1 ? "Duplicate " + root.selected-count + " Rows" : "Duplicate Row"; enabled: root.editable; activated => { root.command("duplicate-row"); } }
+                                        MenuItem { title: root.selected-count > 1 ? "Delete " + root.selected-count + " Rows" : "Delete Row"; enabled: root.editable; activated => { root.command("delete-row"); } }
+                                    }
+                                }
+                                grid-scroll := ScrollView {
+                                    viewport-width: max(self.visible-width, header.preferred-width);
+                                    viewport-height: max(self.visible-height, 30px + root.rows.length * 26px);
+                                    VerticalLayout {
+                                        spacing: 0px; alignment: start;
+                                        header := HorizontalLayout {
+                                            height: root.columns.length > 0 ? 30px : 0px; spacing: 0px;
+                                            visible: root.columns.length > 0;
+                                            Rectangle { width: 48px; background: Theme.header;
+                                                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                                            }
+                                            for col[i] in root.columns: Rectangle {
+                                                width: root.column-widths[i]; background: sort-hit.has-hover ? Theme.header-hover : Theme.header;
+                                                Text { text: col; x: 9px; width: parent.width - 18px; height: parent.height; vertical-alignment: center; overflow: elide; font-size: 12.5px; font-weight: 600; color: i == root.selected-column ? Theme.accent : Theme.text; }
+                                                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                                                Rectangle { x: parent.width - 1px; width: 1px; y: 6px; height: parent.height - 12px; background: Theme.line; }
+                                                sort-hit := TouchArea { mouse-cursor: pointer; clicked => { root.command("sort:" + i); } }
+                                                Rectangle {
+                                                    x: parent.width - 5px; width: 6px;
+                                                    background: grip.has-hover || grip.pressed ? Theme.accent.with-alpha(0.6) : transparent;
+                                                    grip := TouchArea {
+                                                        mouse-cursor: col-resize;
+                                                        property <length> start;
+                                                        property <length> origin;
+                                                        pointer-event(e) => { if e.kind == PointerEventKind.down { self.start = root.column-widths[i]; self.origin = self.absolute-position.x + self.mouse-x; } }
+                                                        moved => { if self.pressed { root.column-widths[i] = max(50px, self.start + self.absolute-position.x + self.mouse-x - self.origin); } }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        for row[r] in root.rows: HorizontalLayout {
+                                            height: 26px; spacing: 0px;
+                                            Rectangle {
+                                                width: 48px; background: row.marked || r == root.selected-row ? Theme.accent.with-alpha(0.28) : Theme.content;
+                                                Text { text: r + 1; x: 0px; width: parent.width - 10px; height: parent.height; font-family: Theme.mono; font-size: 11.5px; color: row.marked || r == root.selected-row ? Theme.text : Theme.faint; vertical-alignment: center; horizontal-alignment: right; }
+                                                TouchArea {
+                                                    pointer-event(e) => {
+                                                        if e.kind == PointerEventKind.down {
+                                                            shortcuts.focus();
+                                                            root.cell-select(r, max(root.selected-column, 0), e.modifiers.shift ? 2 : (e.modifiers.meta || e.modifiers.control) ? 1 : 0);
+                                                            if e.button == PointerEventButton.right {
+                                                                grid-menu.show({ x: self.absolute-position.x + self.mouse-x - grid-menu.absolute-position.x, y: self.absolute-position.y + self.mouse-y - grid-menu.absolute-position.y });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            for cell[c] in row.cells: Rectangle {
+                                                width: root.column-widths[c];
+                                                background: row.state == 2 ? #e5484d33 : row.state == 1 ? #3fb95026 : cell.changed ? #e5a50a33
+                                                    : row.marked || r == root.selected-row ? Theme.accent.with-alpha(0.22) : mod(r, 2) == 0 ? Theme.content : Theme.content-alt;
+                                                Rectangle { x: parent.width - 1px; width: 1px; background: Theme.grid-line; }
+                                                if r == root.selected-row && c == root.selected-column: Rectangle { border-width: 1.5px; border-color: Theme.accent; border-radius: 2px; }
+                                                if r == root.edit-row && c == root.edit-col: Rectangle {
+                                                    background: Theme.content; border-width: 2px; border-color: Theme.accent; border-radius: 2px;
+                                                    cell-input := TextInput {
+                                                        x: 9px; width: parent.width - 18px; height: parent.height;
+                                                        vertical-alignment: center; single-line: true;
+                                                        text: cell.null ? "" : cell.text;
+                                                        font-family: Theme.mono; font-size: 12.5px; color: Theme.text;
+                                                        horizontal-alignment: cell.numeric ? right : left;
+                                                        selection-background-color: Theme.accent.with-alpha(0.45);
+                                                        init => { self.focus(); self.select-all(); }
+                                                        accepted => { root.commit-cell(c, self.text, cell.null ? "" : cell.text, cell.null); }
+                                                        changed has-focus => {
+                                                            if !self.has-focus && root.edit-row == r && root.edit-col == c {
+                                                                root.commit-cell(c, self.text, cell.null ? "" : cell.text, cell.null);
+                                                            }
+                                                        }
+                                                        key-pressed(e) => {
+                                                            if e.text == Key.Escape { root.edit-row = -1; return accept; }
+                                                            if e.text == Key.Tab {
+                                                                root.commit-cell(c, self.text, cell.null ? "" : cell.text, cell.null);
+                                                                if c + 1 < row.cells.length && !row.cells[c + 1].multiline {
+                                                                    root.cell-action(r, c + 1, false);
+                                                                    root.edit-row = r; root.edit-col = c + 1;
+                                                                }
+                                                                return accept;
+                                                            }
+                                                            return reject;
+                                                        }
+                                                        accessible-role: text-input;
+                                                        accessible-label: root.columns[c];
+                                                    }
+                                                }
+                                                Text {
+                                                    visible: !(r == root.edit-row && c == root.edit-col);
+                                                    text: cell.text; x: 9px; width: parent.width - 18px; height: parent.height;
+                                                    color: cell.null ? Theme.faint : row.state == 2 ? Theme.muted : Theme.text;
+                                                    font-italic: cell.null; font-family: Theme.mono; font-size: 12.5px;
+                                                    vertical-alignment: center; overflow: elide;
+                                                    horizontal-alignment: cell.numeric ? right : left;
+                                                }
+                                                if !(r == root.edit-row && c == root.edit-col): TouchArea {
+                                                    pointer-event(e) => {
+                                                        if e.kind == PointerEventKind.down {
+                                                            shortcuts.focus();
+                                                            if e.button == PointerEventButton.right {
+                                                                if !row.marked { root.cell-select(r, c, 0); } else { root.cell-select(r, c, 3); }
+                                                                grid-menu.show({ x: self.absolute-position.x + self.mouse-x - grid-menu.absolute-position.x, y: self.absolute-position.y + self.mouse-y - grid-menu.absolute-position.y });
+                                                            } else {
+                                                                root.cell-select(r, c, e.modifiers.shift ? 2 : (e.modifiers.meta || e.modifiers.control) ? 1 : 0);
+                                                            }
+                                                        }
+                                                    }
+                                                    double-clicked => {
+                                                        if root.editable && !cell.multiline && row.state != 2 {
+                                                            root.cell-action(r, c, false);
+                                                            root.edit-row = r; root.edit-col = c;
+                                                        } else {
+                                                            root.cell-action(r, c, true);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if root.columns.length == 0 && !root.busy: VerticalLayout {
+                                    alignment: center;
+                                    Muted { text: root.query ? "Run a query to see results here." : "No columns."; horizontal-alignment: center; }
+                                }
+                                FadeCover { key: root.view * 1000 + root.active-tab; }
+                            }
+                            if root.inspector-open: VRule { }
+                            if root.inspector-open: Rectangle {
+                                width: 300px; background: Theme.sidebar;
+                                VerticalLayout {
+                                    padding: 12px; spacing: 10px;
+                                    HorizontalLayout {
+                                        Text { text: root.selected-row < 0 ? "Row Inspector" : "Row " + (root.selected-row + 1); font-size: 14px; font-weight: 600; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                                        IconButton { icon: @image-url("icons/x.svg"); icon-size: 14px; tip: "Close inspector"; clicked => { root.inspector-open = false; } }
+                                    }
+                                    if root.selected-row < 0: Muted { text: "Select a row to inspect and edit its values."; wrap: word-wrap; }
+                                    ListView {
+                                        vertical-stretch: 1;
+                                        for field[i] in root.fields: VerticalLayout {
+                                            padding-bottom: 12px; padding-right: 12px; spacing: 5px;
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                Text { text: field.name; font-size: 12px; font-weight: 600; color: Theme.muted; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                                                Rectangle {
+                                                    width: 40px; height: 18px; border-radius: 4px;
+                                                    background: field.null ? Theme.accent.with-alpha(0.3) : null-hit.has-hover ? Theme.ink.with-alpha(0.078) : transparent;
+                                                    Text { text: "NULL"; font-size: 10px; font-weight: 700; color: field.null ? Theme.accent : Theme.faint; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+                                                    null-hit := TouchArea { enabled: root.editable && !root.busy; mouse-cursor: pointer; clicked => { root.field-edit(i, field.value, !field.null); } }
+                                                    accessible-role: checkbox; accessible-label: "NULL"; accessible-checked: field.null;
+                                                }
+                                                IconButton { width: 20px; height: 20px; icon: @image-url("icons/ellipsis.svg"); icon-size: 13px; tip: "Expand value"; clicked => { root.cell-action(root.selected-row, i, true); } }
+                                            }
+                                            Field {
+                                                text: field.value; mono: true; font-size: 12.5px; height: 30px;
+                                                placeholder: field.null ? "NULL" : "";
+                                                read-only: !root.editable || root.busy;
+                                                accepted(value) => { root.field-edit(i, value, false); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Slides up from the bottom bar when there are edits to commit.
+                        Rectangle {
+                            height: root.pending > 0 ? 40px : 0px; background: Theme.accent.with-alpha(0.14); clip: true;
+                            animate height { duration: 220ms; easing: ease-out; }
+                            Rectangle { height: 1px; background: Theme.accent.with-alpha(0.4); }
+                            HorizontalLayout {
+                                height: 40px; y: 0px;
+                                padding-left: 12px; padding-right: 10px; spacing: 8px;
+                                Image { source: @image-url("icons/pencil.svg"); width: 14px; height: 14px; y: 13px; colorize: Theme.accent; }
+                                Label { text: root.pending == 1 ? "1 pending change" : root.pending + " pending changes"; horizontal-stretch: 1; }
+                                Btn { y: 7px; text: "Discard"; enabled: !root.busy; clicked => { root.command("discard"); } }
+                                Btn { y: 7px; text: "Commit"; primary: true; enabled: !root.busy; clicked => { root.command("commit"); } }
+                            }
+                        }
+                        Rule { }
+                        // Bottom bar
+                        Rectangle {
+                            height: 40px; background: Theme.toolbar;
+                            HorizontalLayout {
+                                padding-left: 8px; padding-right: 8px; spacing: 6px;
+                                if root.table && !root.is-key: Segmented {
+                                    y: 7px; items: ["Data", "Structure", "Index"]; current: root.view; enabled: !root.busy;
+                                    selected(i) => { root.command("view:" + i); }
+                                }
+                                if root.editable: Btn { y: 7px; text: "Row"; has-icon: true; icon: @image-url("icons/plus.svg"); enabled: !root.busy; clicked => { root.command("add-row"); } }
+                                if root.editable: IconButton { y: 6px; icon: @image-url("icons/copy.svg"); icon-size: 14px; tip: "Duplicate row"; enabled: !root.busy && root.selected-row >= 0; clicked => { root.command("duplicate-row"); } }
+                                if root.editable: IconButton { y: 6px; icon: @image-url("icons/trash-2.svg"); icon-size: 14px; tip: "Delete row"; enabled: !root.busy && root.selected-row >= 0; clicked => { root.command("delete-row"); } }
+                                Text {
+                                    text: root.table && root.row-summary != "" ? root.row-summary : root.status;
+                                    color: Theme.muted; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; overflow: elide; horizontal-stretch: 1;
+                                }
+                                if root.table && !root.is-key && root.view == 0: Btn { y: 7px; text: "Filters"; has-icon: true; icon: @image-url("icons/filter.svg"); active: root.filters-open || root.filter != ""; clicked => { root.filters-open = !root.filters-open; } }
+                                IconButton { y: 6px; icon: @image-url("icons/copy.svg"); icon-size: 14px; tip: "Copy selected row"; enabled: root.selected-row >= 0; clicked => { root.command("copy"); } }
+                                Rectangle {
+                                    width: 28px;
+                                    IconButton { y: 6px; icon: @image-url("icons/download.svg"); icon-size: 15px; tip: "Export"; enabled: !root.busy && root.columns.length > 0; clicked => { export-menu.show(); } }
+                                    export-menu := PopupWindow {
+                                        x: -140px; y: -112px; width: 168px; height: 106px;
+                                        Rectangle {
+                                            background: Theme.menu; border-radius: 8px; border-width: 1px; border-color: Theme.ink.with-alpha(0.102);
+                                            drop-shadow-blur: 18px; drop-shadow-color: #000000.with-alpha(0.56 * Theme.shadow);
+                                            VerticalLayout {
+                                                padding: 5px;
+                                                for f[i] in ["Export as CSV…", "Export as JSON…", "Export as SQL…"]: Rectangle {
+                                                    height: 30px; border-radius: 5px; background: ex.has-hover ? Theme.accent : transparent;
+                                                    Text { x: 10px; height: parent.height; text: f; vertical-alignment: center; color: ex.has-hover ? Theme.accent-text : Theme.text; }
+                                                    ex := TouchArea { clicked => { root.export-format = i; root.command("export"); } }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if root.table && !root.is-key: IconButton { y: 6px; icon: @image-url("icons/upload.svg"); icon-size: 15px; tip: "Import CSV"; enabled: root.editable && !root.busy; clicked => { root.command("import"); } }
+                                if root.table: IconButton { y: 6px; icon: @image-url("icons/chevron-left.svg"); tip: "Previous page"; enabled: root.can-prev && !root.busy; clicked => { root.command("prev"); } }
+                                if root.table: Muted { text: root.page-label; font-size: 11.5px; }
+                                if root.table: IconButton { y: 6px; icon: @image-url("icons/chevron-right.svg"); tip: "Next page"; enabled: root.can-next && !root.busy; clicked => { root.command("next"); } }
+                            }
+                        }
+                    }
+                    if root.console-open: Rectangle {
+                        height: 6px; background: Theme.toolbar;
+                        Rectangle { y: 2px; height: 1px; background: csplit.has-hover || csplit.pressed ? Theme.accent : Theme.line; }
+                        csplit := TouchArea {
+                            mouse-cursor: row-resize;
+                            property <length> start;
+                            property <length> origin;
+                            pointer-event(e) => { if e.kind == PointerEventKind.down { self.start = root.console-height; self.origin = self.absolute-position.y + self.mouse-y; } }
+                            moved => { if self.pressed { root.console-height = clamp(self.start - (self.absolute-position.y + self.mouse-y - self.origin), 90px, 600px); } }
+                        }
+                    }
+                    if root.console-open: Rectangle {
+                        height: root.console-height; background: Theme.content;
+                        VerticalLayout {
+                            spacing: 0px;
+                            Rectangle {
+                                height: 34px; background: Theme.toolbar;
+                                HorizontalLayout {
+                                    padding-left: 12px; padding-right: 8px; spacing: 8px;
+                                    Text { text: "Console"; font-size: 13px; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+                                    Muted { text: root.console-entries.length + " queries"; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Select { y: 4px; width: 150px; height: 26px; model: ["All Queries", "Hide Metadata", "Your Queries"]; current-index <=> root.console-filter; selected => { root.command("console"); } }
+                                    IconButton { y: 3px; icon: @image-url("icons/trash-2.svg"); icon-size: 14px; tip: "Clear console"; clicked => { root.command("clear-console"); } }
+                                    IconButton { y: 3px; icon: @image-url("icons/x.svg"); icon-size: 14px; tip: "Close console"; clicked => { root.console-open = false; } }
+                                }
+                            }
+                            ListView {
+                                for e in root.console-entries: HorizontalLayout {
+                                    padding-left: 12px; padding-right: 12px; padding-top: 3px; padding-bottom: 3px; spacing: 12px;
+                                    Text { text: e.time; font-family: Theme.mono; font-size: 11.5px; color: Theme.faint; width: 92px; }
+                                    Text { text: e.duration; font-family: Theme.mono; font-size: 11.5px; color: Theme.muted; width: 52px; horizontal-alignment: right; }
+                                    VerticalLayout {
+                                        Text { text: e.sql; font-family: Theme.mono; font-size: 11.5px; color: e.user ? Theme.keyword : Theme.text; wrap: word-wrap; }
+                                        if e.error != "": Text { text: e.error; font-family: Theme.mono; font-size: 11.5px; color: Theme.danger; wrap: word-wrap; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    FadeCover { x: 56px; width: parent.width - 56px; key: root.home ? 1 : 0; }
+
+    tip-timer := Timer { interval: 650ms; running: false; triggered => { self.running = false; root.tip-shown = root.tip-text; } }
+    if root.tip-shown != "" && root.menu-ready: Rectangle {
+        x: min(root.tip-x, parent.width - self.width - 8px); y: root.tip-y; width: tip-label.preferred-width + 18px; height: 26px;
+        background: Theme.menu; border-width: 1px; border-color: Theme.ink.with-alpha(0.102); border-radius: 5px;
+        drop-shadow-blur: 10px; drop-shadow-color: #000000.with-alpha(0.50 * Theme.shadow);
+        tip-label := Text { x: 9px; height: parent.height; text: root.tip-shown; font-family: Theme.mono; font-size: 11.5px; color: Theme.text; vertical-alignment: center; }
+    }
+
+    if root.hover-name != "" && root.menu-ready: Rectangle {
+        x: 62px; y: root.hover-y; width: hover-label.preferred-width + 22px; height: 30px;
+        background: Theme.menu; border-width: 1px; border-color: Theme.ink.with-alpha(0.102); border-radius: 6px;
+        drop-shadow-blur: 10px; drop-shadow-color: #000000.with-alpha(0.50 * Theme.shadow);
+        hover-label := Label { x: 11px; text: root.hover-name; height: parent.height; }
+    }
+
+    if root.notice != "": Rectangle {
+        x: parent.width - self.width - 18px; y: parent.height - self.height - 54px;
+        width: min(460px, parent.width - 120px); height: max(46px, notice-text.preferred-height + 24px);
+        background: Theme.menu; border-radius: 10px; border-width: 1px;
+        border-color: root.notice-error ? Theme.danger.with-alpha(0.6) : Theme.success.with-alpha(0.5);
+        drop-shadow-blur: 20px; drop-shadow-color: #000000.with-alpha(0.63 * Theme.shadow); drop-shadow-offset-y: 6px;
+        HorizontalLayout {
+            padding: 12px; padding-right: 6px; spacing: 10px;
+            Image { source: root.notice-error ? @image-url("icons/circle-alert.svg") : @image-url("icons/check.svg"); width: 18px; height: 18px; colorize: root.notice-error ? Theme.danger : Theme.success; }
+            notice-text := Text { text: root.notice; color: Theme.text; font-size: 13px; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+            IconButton { icon: @image-url("icons/x.svg"); icon-size: 13px; width: 24px; height: 24px; tip: "Dismiss"; clicked => { root.command("dismiss"); } }
+        }
+    }
+
+    if root.drag-id != "": Rectangle {
+        x: root.drag-x; y: root.drag-y - root.drag-offset; width: root.drag-width;
+        height: root.drag-item.header ? 40px : 54px;
+        border-radius: 9px; background: Theme.menu.with-alpha(0.92); border-width: 1px; border-color: Theme.accent.with-alpha(0.7);
+        drop-shadow-blur: 24px; drop-shadow-color: #000000.with-alpha(0.69 * Theme.shadow); drop-shadow-offset-y: 8px;
+        HorizontalLayout {
+            padding-left: 20px; padding-right: 14px; spacing: 12px;
+            if root.drag-item.header: Rectangle {
+                width: 26px; height: 26px; y: 7px; border-radius: 7px; background: root.drag-item.tint.with-alpha(0.25);
+                Text { text: root.drag-item.symbol != "" ? root.drag-item.symbol : "▣"; color: root.drag-item.tint.brighter(0.4); width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            if !root.drag-item.header: Avatar { y: 9px; text: root.drag-item.badge; tone: root.drag-item.badge-color; }
+            VerticalLayout {
+                alignment: center; spacing: 2px;
+                Text { text: root.drag-item.name; font-size: 14px; font-weight: root.drag-item.header ? 600 : 400; color: Theme.text; overflow: elide; }
+                if !root.drag-item.header: Text { text: root.drag-item.subtitle; font-size: 12px; color: Theme.muted; overflow: elide; }
+            }
+        }
+    }
+
+    if root.drag-id != "" && root.drop-id != "" && root.drop-id != root.drag-id: Rectangle {
+        x: root.drag-x; y: root.drop-line-y - 1.5px; width: root.drag-width; height: 3px; border-radius: 1.5px; background: Theme.accent;
+        animate y { duration: 90ms; easing: ease-out; }
+        Rectangle { x: -4px; y: -2.5px; width: 8px; height: 8px; border-radius: 4px; background: Theme.accent; }
+    }
+
+    // Open Connection palette (⌘K)
+    if root.palette-open: Rectangle {
+        background: #000000.with-alpha(0.4 * Theme.shadow);
+        TouchArea { clicked => { root.palette-open = false; } }
+        Rectangle {
+            x: (parent.width - self.width) / 2; y: max(40px, parent.height * 0.12);
+            width: 540px; height: pal.preferred-height;
+            background: Theme.dialog; border-radius: 14px; border-width: 1px; border-color: Theme.ink.with-alpha(0.122);
+            drop-shadow-blur: 40px; drop-shadow-color: #000000.with-alpha(0.69 * Theme.shadow); drop-shadow-offset-y: 12px;
+            TouchArea { }
+            pal := VerticalLayout {
+                padding: 14px; spacing: 10px;
+                Text { text: "Open Connection"; font-size: 14px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                Field {
+                    autofocus: true;
+                    height: 34px; round: true; has-icon: true; icon: @image-url("icons/search.svg"); font-size: 14px;
+                    placeholder: "Search for connection…";
+                    text <=> root.palette-search;
+                    edited => { root.search-changed("palette"); }
+                    accepted => { root.palette-open-selected(); }
+                    navigate(dir) => {
+                        if dir == "up" { root.palette-index = max(0, root.palette-index - 1); return true; }
+                        if dir == "down" { root.palette-index = min(root.palette-items.length - 1, root.palette-index + 1); return true; }
+                        if dir == "escape" { root.palette-open = false; return true; }
+                        return false;
+                    }
+                }
+                Rectangle {
+                    height: min(root.palette-items.length, 8) * 50px + (root.palette-items.length == 0 ? 60px : 0px);
+                    if root.palette-items.length == 0: Muted { width: parent.width; height: parent.height; text: "No matching connections."; horizontal-alignment: center; }
+                    ListView {
+                        for c[i] in root.palette-items: Rectangle {
+                            height: 50px; border-radius: 8px;
+                            background: i == root.palette-index ? Theme.ink.with-alpha(0.090) : pal-hit.has-hover ? Theme.ink.with-alpha(0.039) : transparent;
+                            animate background { duration: 120ms; easing: ease; }
+                            HorizontalLayout {
+                                padding-left: 12px; padding-right: 12px; spacing: 12px;
+                                Avatar { y: 8px; size: 34px; text: c.badge; tone: c.badge-color; }
+                                VerticalLayout {
+                                    alignment: center; spacing: 2px;
+                                    HorizontalLayout { spacing: 8px;
+                                        Text { text: c.name; font-size: 14px; color: Theme.text; overflow: elide; vertical-alignment: center; }
+                                        if c.tag != "": TagPill { y: 1px; text: c.tag; tone: c.tag-color; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+                                    Text { text: c.subtitle != "" ? c.subtitle : c.kind; font-size: 12px; color: Theme.muted; overflow: elide; }
+                                }
+                            }
+                            pal-hit := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.palette-index = i; }
+                                double-clicked => { root.palette-index = i; root.palette-open-selected(); }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Btn { text: "Cancel"; min-width: 100px; clicked => { root.palette-open = false; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "New…"; min-width: 100px; clicked => { root.palette-open = false; root.command("new-connection"); } }
+                    Btn { text: "Open"; min-width: 100px; primary: true; enabled: root.palette-items.length > 0; clicked => { root.palette-open-selected(); } }
+                }
+            }
+        }
+    }
+
+    if root.connection-dialog || root.group-dialog || root.cell-dialog || root.save-dialog || root.confirm-dialog || root.about-dialog || root.shortcuts-dialog || root.auth-dialog || root.import-dialog || root.clone-dialog: Rectangle {
+        background: #000000.with-alpha(0.5 * Theme.shadow);
+        TouchArea { }
+        Rectangle {
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            width: root.import-dialog ? 660px : root.connection-dialog ? (root.engine-picker ? 560px : 620px) : 500px;
+            height: root.clone-dialog ? 250px : root.import-dialog ? min(parent.height - 40px, root.import-step == 0 ? 420px : 560px) : root.auth-dialog ? (root.auth-detail != "" ? 340px : 280px) : root.connection-dialog ? (root.engine-picker ? 290px : min(parent.height - 40px, root.form.ssh ? (root.form.kind == 2 ? 560px : 740px) : (root.form.kind == 2 ? 400px : 600px))) : root.shortcuts-dialog ? min(parent.height - 80px, 560px) : root.about-dialog ? 340px : root.cell-dialog ? 440px : root.group-dialog ? 330px : 230px;
+            background: Theme.dialog; border-radius: 14px; border-width: 1px; border-color: Theme.ink.with-alpha(0.122);
+            drop-shadow-blur: 40px; drop-shadow-color: #000000.with-alpha(0.69 * Theme.shadow); drop-shadow-offset-y: 12px;
+            if root.clone-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: "Clone " + root.clone-source; font-size: 16px; font-weight: 700; color: Theme.text; overflow: elide; }
+                FormRow { label: "New Name"; Field { autofocus: true; text <=> root.clone-name; mono: true; accepted => { root.command("clone-run"); } } }
+                FormRow { label: ""; Check { text: "Also copy every row"; checked <=> root.clone-data; } Rectangle { horizontal-stretch: 1; } }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout { alignment: end; spacing: 8px;
+                    Btn { text: "Cancel"; min-width: 90px; clicked => { root.clone-dialog = false; } }
+                    Btn { text: "Clone"; primary: true; min-width: 90px; enabled: root.clone-name != "" && root.clone-name != root.clone-source; clicked => { root.command("clone-run"); } }
+                }
+            }
+            if root.import-dialog && root.import-step == 0: VerticalLayout {
+                padding: 22px; spacing: 14px;
+                Text { text: "Import Connections"; font-size: 16px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                Muted { text: "FROM AN APP"; font-size: 11px; font-weight: 600; }
+                HorizontalLayout {
+                    spacing: 8px; alignment: center;
+                    for src[i] in root.import-sources: Rectangle {
+                        width: 114px; height: 128px; border-radius: 10px;
+                        background: src.available && app-hit.has-hover ? Theme.ink.with-alpha(0.063) : Theme.ink.with-alpha(0.024);
+                        animate background { duration: 120ms; easing: ease; }
+                        border-width: 1px; border-color: Theme.ink.with-alpha(0.051);
+                        opacity: src.available ? 1 : 0.45;
+                        VerticalLayout {
+                            padding: 10px; padding-top: 14px; spacing: 6px; alignment: start;
+                            HorizontalLayout { alignment: center; Avatar { size: 46px; text: src.badge; tone: src.color; } }
+                            Text { text: src.name; font-size: 12.5px; color: Theme.text; horizontal-alignment: center; wrap: word-wrap; }
+                            Text { text: src.detail; font-size: 11px; color: src.available ? Theme.success : Theme.faint; horizontal-alignment: center; }
+                        }
+                        app-hit := TouchArea { enabled: src.available; mouse-cursor: pointer; clicked => { root.command("import-app:" + i); } }
+                        accessible-role: button; accessible-label: "Import from " + src.name; accessible-enabled: src.available;
+                    }
+                }
+                Muted { text: "FROM A FILE"; font-size: 11px; font-weight: 600; }
+                Rectangle {
+                    height: 64px; border-radius: 10px;
+                    background: file-hit.has-hover ? Theme.ink.with-alpha(0.063) : Theme.ink.with-alpha(0.024); border-width: 1px; border-color: Theme.ink.with-alpha(0.051);
+                    HorizontalLayout {
+                        padding: 14px; spacing: 14px;
+                        Rectangle { width: 36px; height: 36px; border-radius: 8px; background: Theme.accent.with-alpha(0.18);
+                            Image { source: @image-url("icons/folder-open.svg"); width: 18px; height: 18px; x: 9px; y: 9px; colorize: Theme.accent; }
+                        }
+                        VerticalLayout {
+                            alignment: center; spacing: 3px;
+                            Text { text: "Choose a File…"; font-size: 13.5px; color: Theme.text; }
+                            Muted { text: "TablePlus export (.tableplusconnection) · Pueo or DBeaver JSON · CSV · plist · connection URLs"; overflow: elide; }
+                        }
+                    }
+                    file-hit := TouchArea { mouse-cursor: pointer; clicked => { root.command("import-file"); } }
+                    accessible-role: button; accessible-label: "Import from a file";
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Btn { text: "Cancel"; min-width: 96px; clicked => { root.import-dialog = false; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Export Connections…"; has-icon: true; icon: @image-url("icons/upload.svg"); clicked => { root.import-dialog = false; root.command("export-connections"); } }
+                }
+            }
+            if root.import-dialog && root.import-step == 1: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                HorizontalLayout {
+                    Text { text: root.import-title; font-size: 16px; font-weight: 700; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; }
+                    Btn { text: "Select All"; clicked => { root.command("import-all"); } }
+                    Rectangle { width: 6px; }
+                    Btn { text: "None"; clicked => { root.command("import-none"); } }
+                }
+                Muted { text: root.import-items.length + " found · " + root.import-count + " selected"; }
+                Rectangle {
+                    vertical-stretch: 1; border-radius: 8px; background: Theme.well; border-width: 1px; border-color: Theme.ink.with-alpha(0.051);
+                    if root.import-items.length == 0: Muted { width: parent.width; height: parent.height; text: "No connections found."; horizontal-alignment: center; }
+                    ListView {
+                        for item[i] in root.import-items: Rectangle {
+                            height: 52px;
+                            background: pick.has-hover && !item.exists ? Theme.ink.with-alpha(0.031) : transparent;
+                            opacity: item.exists ? 0.5 : 1;
+                            HorizontalLayout {
+                                padding-left: 12px; padding-right: 12px; spacing: 12px;
+                                Rectangle {
+                                    width: 16px; height: 16px; y: 18px; border-radius: 4px;
+                                    background: item.selected ? Theme.accent : Theme.input;
+                                    border-width: item.selected ? 0px : 1px; border-color: Theme.ink.with-alpha(0.188);
+                                    Image { visible: item.selected; source: @image-url("icons/check.svg"); width: 12px; height: 12px; x: 2px; y: 2px; colorize: Theme.accent-text; }
+                                }
+                                Avatar { y: 9px; size: 34px; text: item.connection.badge; tone: item.connection.badge-color; }
+                                VerticalLayout {
+                                    alignment: center; spacing: 2px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: item.connection.name; font-size: 13.5px; color: Theme.text; overflow: elide; vertical-alignment: center; }
+                                        if item.connection.tag != "": TagPill { y: 1px; text: item.connection.tag; tone: item.connection.tag-color; }
+                                        if item.connection.group != "": Muted { text: item.connection.group; font-size: 11.5px; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+                                    Text { text: item.connection.subtitle != "" ? item.connection.subtitle : item.connection.kind; font-size: 12px; color: Theme.muted; overflow: elide; }
+                                }
+                            }
+                            pick := TouchArea { enabled: !item.exists; mouse-cursor: pointer; clicked => { root.command("import-toggle:" + i); } }
+                            accessible-role: checkbox; accessible-label: item.connection.name; accessible-checked: item.selected;
+                        }
+                    }
+                }
+                if root.import-note != "": Text { text: root.import-note; color: Theme.muted; font-size: 12px; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Btn { text: "Back"; min-width: 80px; clicked => { root.command("import-back"); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Cancel"; min-width: 80px; clicked => { root.import-dialog = false; } }
+                    Btn { text: root.import-count == 1 ? "Import 1 Connection" : "Import " + root.import-count + " Connections"; primary: true; enabled: root.import-count > 0; clicked => { root.command("import-run"); } }
+                }
+            }
+            if root.auth-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        width: 40px; height: 40px; border-radius: 20px; background: Theme.accent.with-alpha(0.2);
+                        Image { source: @image-url("icons/lock.svg"); width: 20px; height: 20px; x: 10px; y: 10px; colorize: Theme.accent; }
+                    }
+                    VerticalLayout {
+                        alignment: center; spacing: 2px;
+                        Text { text: root.auth-title; font-size: 16px; font-weight: 700; color: Theme.text; }
+                        Muted { text: root.auth-name; }
+                    }
+                }
+                Text { text: root.auth-text; color: Theme.text; wrap: word-wrap; font-size: 13px; }
+                Field {
+                    autofocus: true; password: true; height: 32px;
+                    placeholder: "Password";
+                    text <=> root.auth-password;
+                    accepted => { root.command("auth-submit"); }
+                }
+                if root.auth-keychain: Check { text: "Save in keychain"; checked <=> root.auth-remember; }
+                if root.auth-detail != "": Rectangle {
+                    height: detail.preferred-height + 14px; border-radius: 6px; background: Theme.ink.with-alpha(0.039);
+                    detail := Text { x: 10px; y: 7px; width: parent.width - 20px; text: root.auth-detail; color: Theme.muted; font-family: Theme.mono; font-size: 11.5px; wrap: word-wrap; }
+                }
+                HorizontalLayout { alignment: end; spacing: 8px;
+                    Btn { text: "Cancel"; min-width: 90px; clicked => { root.command("auth-cancel"); } }
+                    Btn { text: root.auth-keychain ? "Connect" : "Open"; primary: true; min-width: 90px; clicked => { root.command("auth-submit"); } }
+                }
+            }
+            if root.about-dialog: VerticalLayout {
+                padding: 26px; spacing: 10px;
+                HorizontalLayout { alignment: center; Image { source: @image-url("../data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg"); width: 84px; height: 84px; image-fit: contain; } }
+                Text { text: "Pueo"; font-size: 26px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                Muted { text: "Version " + root.version; horizontal-alignment: center; }
+                Muted { text: "A native database client built with Rust and Slint.\nPostgreSQL · MySQL / MariaDB · SQLite · Redis"; horizontal-alignment: center; wrap: word-wrap; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout { alignment: center; Btn { text: "Done"; primary: true; min-width: 110px; clicked => { root.about-dialog = false; } } }
+            }
+            if root.shortcuts-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: "Keyboard Shortcuts"; font-size: 18px; font-weight: 700; color: Theme.text; }
+                Muted { text: "⌘ on macOS, Ctrl on Linux."; }
+                ScrollView {
+                    VerticalLayout {
+                        alignment: start; spacing: 2px;
+                        for s in [
+                            { k: "⌘K", d: "Open connection" }, { k: "⌘N", d: "New connection" }, { k: "⌘O", d: "Open SQLite file" },
+                            { k: "⌘T", d: "New query tab" }, { k: "⌘W", d: "Close tab" }, { k: "⇧⌘W", d: "Disconnect" },
+                            { k: "⌘0", d: "Connections" }, { k: "⌘1–9", d: "Switch connection" },
+                            { k: "⌘Return", d: "Run statement or selection" }, { k: "⇧⌘Return", d: "Run all statements" }, { k: "⌘.", d: "Stop query" },
+                            { k: "⌃Space", d: "Autocomplete" }, { k: "⌘S", d: "Save query / commit changes" }, { k: "⌘F", d: "Filters" },
+                            { k: "⌘I", d: "Add row" }, { k: "⇧⌘I", d: "Row inspector" }, { k: "⇧⌘C", d: "Console" }, { k: "⌘R", d: "Refresh" }, { k: "F9", d: "Sidebar" },
+                        ]: HorizontalLayout {
+                            height: 26px; spacing: 12px;
+                            Rectangle { width: 80px;
+                                Rectangle { x: 0px; y: 3px; width: kt.preferred-width + 14px; height: 20px; border-radius: 5px; background: Theme.ink.with-alpha(0.078);
+                                    kt := Text { x: 7px; height: parent.height; text: s.k; font-size: 12px; color: Theme.text; vertical-alignment: center; }
+                                }
+                            }
+                            Label { text: s.d; }
+                        }
+                    }
+                }
+                HorizontalLayout { alignment: end; Btn { text: "Done"; primary: true; min-width: 100px; clicked => { root.shortcuts-dialog = false; } } }
+            }
+            if root.connection-dialog && root.engine-picker: VerticalLayout {
+                padding: 22px; spacing: 18px;
+                Text { text: "New Connection"; font-size: 16px; font-weight: 700; color: Theme.text; horizontal-alignment: center; }
+                HorizontalLayout {
+                    spacing: 10px; alignment: center;
+                    for name[i] in Theme.engines: Rectangle {
+                        width: 118px; height: 120px; border-radius: 10px;
+                        background: i == root.picked-engine ? Theme.accent.with-alpha(0.16) : eng.has-hover ? Theme.ink.with-alpha(0.039) : transparent;
+                        animate background, border-width { duration: 120ms; easing: ease; }
+                        border-width: i == root.picked-engine ? 2px : 0px; border-color: Theme.accent;
+                        VerticalLayout {
+                            padding: 12px; padding-top: 16px; spacing: 10px; alignment: start;
+                            HorizontalLayout { alignment: center; Avatar { size: 58px; text: Theme.engine-badges[i]; tone: Theme.engine-colors[i]; } }
+                            Text { text: name; font-size: 13px; color: Theme.text; horizontal-alignment: center; wrap: word-wrap; }
+                        }
+                        eng := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.picked-engine = i; }
+                            double-clicked => { root.picked-engine = i; root.form.kind = i; root.form-action("kind"); root.engine-picker = false; }
+                        }
+                        accessible-role: button; accessible-label: name;
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Btn { text: "Cancel"; min-width: 96px; clicked => { root.connection-dialog = false; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Open SQLite File…"; clicked => { root.connection-dialog = false; root.command("open-file"); } }
+                    Btn { text: "New Group"; clicked => { root.connection-dialog = false; root.command("new-group"); } }
+                    Btn { text: "Create"; primary: true; min-width: 96px; clicked => { root.form.kind = root.picked-engine; root.form-action("kind"); root.engine-picker = false; } }
+                }
+            }
+            if root.connection-dialog && !root.engine-picker: VerticalLayout {
+                padding: 22px; spacing: 14px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    Avatar { size: 40px; text: Theme.engine-badges[root.form.kind]; tone: Theme.engine-colors[root.form.kind]; }
+                    VerticalLayout {
+                        alignment: center; spacing: 2px;
+                        Text { text: root.form.id == "" ? Theme.engines[root.form.kind] + " Connection" : "Edit Connection"; font-size: 16px; font-weight: 700; color: Theme.text; }
+                        Muted { text: root.form.id == "" ? "Fill in the details below, then test or connect." : Theme.engines[root.form.kind]; }
+                    }
+                }
+                ScrollView {
+                    VerticalLayout {
+                        spacing: 10px; alignment: start; padding-right: 12px;
+                        FormRow { label: "Name"; Field { text <=> root.form.name; placeholder: "My database"; enabled: !root.form-busy; } }
+                        FormRow { label: "Color / Tag";
+                            Select { model: root.color-names; current-index <=> root.form.color; }
+                            Select { model: root.tag-names; current-index <=> root.form.tag; }
+                        }
+                        FormRow { label: "Group"; Select { model: root.group-names; current-index <=> root.form.group; } }
+                        Rule { }
+                        if root.form.kind == 2: FormRow { label: "Path";
+                            Field { text <=> root.form.file; placeholder: "SQLite file path or :memory:"; mono: true; }
+                            Btn { y: 1px; text: "Browse…"; clicked => { root.form-action("file"); } }
+                        }
+                        if root.form.kind != 2: FormRow { label: "Host / Port";
+                            Field { text <=> root.form.host; placeholder: "127.0.0.1"; mono: true; }
+                            Field { width: 90px; text <=> root.form.port; placeholder: "Port"; mono: true; }
+                        }
+                        if root.form.kind != 2: FormRow { label: "User"; Field { text <=> root.form.user; placeholder: "user name"; } }
+                        if root.form.kind != 2: FormRow { label: "Password"; Field { text <=> root.form.password; password: true; placeholder: root.form.id == "" ? "password" : "Leave blank to keep the saved password"; } }
+                        if root.form.kind != 2: FormRow { label: "Database"; Field { text <=> root.form.database; placeholder: root.form.kind == 3 ? "0" : "database name"; } }
+                        if root.form.kind == 0: FormRow { label: "Schema"; Field { text <=> root.form.schema; placeholder: "public"; } }
+                        if root.form.kind != 2: FormRow { label: "Options";
+                            Check { text: "Use TLS"; checked <=> root.form.tls; }
+                            Check { text: "Save passwords in keychain"; checked <=> root.form.remember; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Rule { }
+                        FormRow { label: "SSH"; Check { text: "Connect over SSH"; checked <=> root.form.ssh; } Rectangle { horizontal-stretch: 1; } }
+                        if root.form.ssh: FormRow { label: "SSH Host / Port";
+                            Field { text <=> root.form.ssh-host; placeholder: "bastion.example.com"; mono: true; }
+                            Field { width: 90px; text <=> root.form.ssh-port; placeholder: "22"; mono: true; }
+                        }
+                        if root.form.ssh: FormRow { label: "SSH User"; Field { text <=> root.form.ssh-user; placeholder: "user name"; } }
+                        if root.form.ssh: FormRow { label: "Auth"; Select { model: root.ssh-auth-names; current-index <=> root.form.ssh-auth; } }
+                        if root.form.ssh && root.form.ssh-auth == 2: FormRow { label: "Private Key";
+                            Field { text <=> root.form.ssh-key; placeholder: "~/.ssh/id_ed25519"; mono: true; }
+                            Btn { y: 1px; text: "Browse…"; clicked => { root.form-action("key"); } }
+                        }
+                        if root.form.ssh && root.form.ssh-auth != 0: FormRow { label: root.form.ssh-auth == 1 ? "SSH Password" : "Passphrase"; Field { text <=> root.form.ssh-secret; password: true; } }
+                        Muted { text: "Passwords are never written to the connections file."; horizontal-alignment: center; }
+                    }
+                }
+                if root.form-notice != "" || root.form-busy: Rectangle {
+                    property <color> tone: root.form-busy ? Theme.accent : root.form-ok ? Theme.success : Theme.danger;
+                    height: fn.preferred-height + 16px; border-radius: 8px; background: self.tone.with-alpha(0.14);
+                    border-width: 1px; border-color: self.tone.with-alpha(0.35);
+                    animate background, border-color { duration: 150ms; easing: ease; }
+                    fn := Text {
+                        x: 12px; y: 8px; width: parent.width - 24px; wrap: word-wrap; font-size: 12.5px;
+                        text: root.form-busy ? "Testing the connection…" : root.form-notice;
+                        color: parent.tone.brighter(0.3);
+                        animate color { duration: 150ms; easing: ease; }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    if root.form.id == "": Btn { text: "Back"; enabled: !root.form-busy; clicked => { root.engine-picker = true; } }
+                    Btn { text: "Test"; has-icon: true; icon: @image-url("icons/plug.svg"); enabled: !root.form-busy; clicked => { root.form-action("test"); } }
+                    if root.form-busy: Spinner { width: 16px; height: 16px; y: 5px; indeterminate: true; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Cancel"; enabled: !root.form-busy; clicked => { root.connection-dialog = false; } }
+                    Btn { text: "Save"; enabled: !root.form-busy; clicked => { root.form-action("save"); } }
+                    Btn { text: "Connect"; primary: true; enabled: !root.form-busy; clicked => { root.form-action("connect"); } }
+                }
+            }
+            if root.group-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: root.group-index < 0 ? "New Group" : "Edit Group"; font-size: 16px; font-weight: 700; color: Theme.text; }
+                if root.group-index >= 0: FormRow { label: "Group"; Select { model: root.group-names; current-index: root.group-index + 1; selected(i, v) => { root.command("group-select:" + i); } } }
+                FormRow { label: "Name"; Field { text <=> root.group-name; placeholder: "Group name"; } }
+                FormRow { label: "Color"; Select { model: root.color-names; current-index <=> root.group-color; } }
+                FormRow { label: "Icon";
+                    Select { width: 110px; model: ["Symbol", "Emoji", "Image"]; current-index <=> root.group-icon-kind; }
+                    Field { text <=> root.group-icon-value; placeholder: root.group-icon-kind == 2 ? "Image path" : root.group-icon-kind == 1 ? "Emoji" : "Symbol name"; }
+                    if root.group-icon-kind == 2: Btn { y: 1px; text: "Browse…"; clicked => { root.command("group-image"); } }
+                    if root.group-icon-kind == 1: Rectangle {
+                        width: emoji-btn.preferred-width; height: 28px;
+                        emoji-btn := Btn { y: 1px; text: "Pick Emoji…"; clicked => { emoji-popup.show(); } }
+                        emoji-popup := PopupWindow {
+                            x: parent.width - 296px; y: 32px; width: 296px; height: 212px;
+                            Rectangle {
+                                background: Theme.menu; border-radius: 10px; border-width: 1px; border-color: Theme.ink.with-alpha(0.102);
+                                drop-shadow-blur: 18px; drop-shadow-color: #000000.with-alpha(0.56 * Theme.shadow);
+                                for e[i] in ["🗄️", "💾", "📦", "🧰", "🏢", "🏠", "🧪", "🚀", "🛒", "💳", "🏦", "📈", "📊", "🗂️", "📁", "🔐", "🔑", "🛡️", "⚙️", "🔧", "🧩", "🌐", "☁️", "🖥️", "📱", "🎮", "🎵", "📚", "✉️", "📝", "🐘", "🐬", "🪶", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫", "⭐", "🔥", "💡", "🧠", "🐞", "🧯", "🌙", "🌿"]: Rectangle {
+                                    x: 8px + mod(i, 8) * 35px; y: 8px + floor(i / 8) * 33px; width: 33px; height: 31px; border-radius: 6px;
+                                    background: pick-hit.has-hover ? Theme.accent.with-alpha(0.3) : transparent;
+                                    Text { text: e; font-size: 18px; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+                                    pick-hit := TouchArea { clicked => { root.group-icon-value = e; } }
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    if root.group-index >= 0: Btn { text: "Delete Group"; danger: true; clicked => { root.command("group-delete"); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Cancel"; clicked => { root.group-dialog = false; } }
+                    Btn { text: "Save"; primary: true; clicked => { root.command("group-save"); } }
+                }
+            }
+            if root.cell-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: root.cell-title; font-size: 16px; font-weight: 700; color: Theme.text; overflow: elide; }
+                if root.cell-choices.length > 0 || root.cell-choice-search != "": HorizontalLayout {
+                    spacing: 8px;
+                    Field { width: 180px; has-icon: true; icon: @image-url("icons/search.svg"); placeholder: "Search values"; text <=> root.cell-choice-search; edited => { root.search-changed("choices"); } }
+                    Select { model: root.cell-choices; current-index: -1; placeholder: root.cell-choices.length == 0 ? "No matching values" : "Choose a value…"; selected(i, value) => { root.cell-value = value; root.cell-null = false; } }
+                }
+                TextEdit { text <=> root.cell-value; read-only: !root.editable; font-family: Theme.mono; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Check { text: "Set NULL"; checked <=> root.cell-null; enabled: root.editable; }
+                    Btn { text: "Copy Value"; has-icon: true; icon: @image-url("icons/copy.svg"); clicked => { root.clipboard-content = root.cell-value; root.copy-grid(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Btn { text: "Cancel"; clicked => { root.cell-dialog = false; } }
+                    Btn { text: root.editable ? "Apply" : "Close"; primary: true; clicked => { root.command("cell-apply"); } }
+                }
+            }
+            if root.save-dialog: VerticalLayout {
+                padding: 22px; spacing: 14px;
+                Text { text: "Save Query"; font-size: 16px; font-weight: 700; color: Theme.text; }
+                FormRow { label: "Name"; Field { text <=> root.save-name; placeholder: "Query name"; accepted => { root.command("query-save"); } } }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout { alignment: end; spacing: 8px;
+                    Btn { text: "Cancel"; clicked => { root.save-dialog = false; } }
+                    Btn { text: "Save"; primary: true; clicked => { root.command("query-save"); } }
+                }
+            }
+            if root.confirm-dialog: VerticalLayout {
+                padding: 22px; spacing: 12px;
+                HorizontalLayout { spacing: 10px;
+                    Image { source: @image-url("icons/circle-alert.svg"); width: 22px; height: 22px; colorize: Theme.warning; }
+                    Text { text: root.confirm-title; font-size: 16px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                }
+                Text { text: root.confirm-text; color: Theme.muted; wrap: word-wrap; font-size: 13px; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout { alignment: end; spacing: 8px;
+                    Btn { text: "Cancel"; clicked => { root.confirm-dialog = false; } }
+                    Btn { text: root.confirm-action; primary: true; clicked => { root.command("confirm"); } }
+                }
+            }
+        }
+    }
+    }
+}

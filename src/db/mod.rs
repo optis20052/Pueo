@@ -35,25 +35,6 @@ impl DbKind {
         }
     }
 
-    /// The database's logo, a bundled symbolic icon (see data/resources.gresource.xml).
-    pub fn icon_name(self) -> &'static str {
-        match self {
-            DbKind::Postgres => "pueo-postgresql-symbolic",
-            DbKind::Mysql => "pueo-mysql-symbolic",
-            DbKind::Sqlite => "pueo-sqlite-symbolic",
-            DbKind::Redis => "pueo-redis-symbolic",
-        }
-    }
-
-    pub fn css_class(self) -> &'static str {
-        match self {
-            DbKind::Postgres => "badge-pg",
-            DbKind::Mysql => "badge-my",
-            DbKind::Sqlite => "badge-sl",
-            DbKind::Redis => "badge-rd",
-        }
-    }
-
     pub fn default_port(self) -> u16 {
         match self {
             DbKind::Postgres => 5432,
@@ -79,15 +60,6 @@ pub enum ObjectKind {
 }
 
 impl ObjectKind {
-    pub fn icon_name(self) -> &'static str {
-        match self {
-            ObjectKind::Table => "view-grid-symbolic",
-            ObjectKind::View => "view-reveal-symbolic",
-            ObjectKind::Key => "dialog-password-symbolic",
-            ObjectKind::Function | ObjectKind::Procedure => "pueo-function-symbolic",
-        }
-    }
-
     /// Functions and procedures: opened as source code rather than browsed as rows.
     pub fn is_routine(self) -> bool {
         matches!(self, ObjectKind::Function | ObjectKind::Procedure)

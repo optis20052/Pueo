@@ -2,33 +2,45 @@
 name = "pueo"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 
 [build-dependencies]
-glib-build-tools = "0.22"
+slint-build = "=1.16.1"
 
 [dependencies]
-adw = { version = "0.9", package = "libadwaita", features = ["v1_8"] }
+aes = "0.8"
 anyhow = "1"
 async-trait = "0.1"
+cbc = "0.1"
 csv = "1"
-gtk = { version = "0.11", package = "gtk4", features = ["v4_18"] }
+dirs = "6"
+hmac = "0.12"
+libc = "0.2"
 mysql_async = "0.37"
 native-tls = "0.2"
-oo7 = { version = "0.6", default-features = false, features = ["tokio", "native_crypto"] }
+pbkdf2 = "0.12"
 postgres-native-tls = "0.5"
 redis = { version = "1", features = ["tokio-comp", "tokio-native-tls-comp"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-sourceview5 = { version = "0.11", features = ["v5_12"], optional = true }
+sha1 = "0.10"
+sha2 = "0.10"
+slint = { version = "=1.16.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility", "compat-1-2", "unstable-winit-030"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process", "net", "io-util"] }
 tokio-postgres = "0.7"
 uuid = { version = "1", features = ["v4"] }
 
-[features]
-default = ["sourceview"]
-# GtkSourceView editor (needs libgtksourceview-5-dev); without it a plain TextView is used.
-sourceview = ["dep:sourceview5"]
+[target.'cfg(target_os = "linux")'.dependencies]
+oo7 = { version = "0.6", default-features = false, features = ["tokio", "native_crypto"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+png = "0.18"
 
 # Faster debug builds: keep line numbers for backtraces, skip full debug info.
 [profile.dev]

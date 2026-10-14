@@ -6,6 +6,6 @@ StartupWMClass=io.github.pueo.Pueo
 Icon=io.github.pueo.Pueo
 Terminal=false
 Type=Application
-Categories=Development;Database;GTK;
+Categories=Development;Database;
 MimeType=application/vnd.sqlite3;application/x-sqlite3;
 StartupNotify=true

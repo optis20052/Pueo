@@ -174,7 +174,7 @@ impl Driver for PgDriver {
                 schema: row[0].clone().unwrap_or_default(),
                 name: row[1].clone().unwrap_or_default(),
                 kind: match row[2].as_deref() {
-                    Some("BASE TABLE") => ObjectKind::Table,
+                    Some("BASE TABLE" | "LOCAL TEMPORARY") => ObjectKind::Table,
                     Some("FUNCTION") => ObjectKind::Function,
                     Some("PROCEDURE") => ObjectKind::Procedure,
                     _ => ObjectKind::View,

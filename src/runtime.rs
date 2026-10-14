@@ -1,9 +1,8 @@
-//! Bridges the GTK main loop and a Tokio runtime that runs all database I/O.
+//! Bridges the Slint event loop and a Tokio runtime that runs all database I/O.
 
 use std::future::Future;
 use std::sync::OnceLock;
 
-use gtk::glib;
 use tokio::runtime::Runtime;
 
 pub fn runtime() -> &'static Runtime {
@@ -18,17 +17,18 @@ pub fn runtime() -> &'static Runtime {
     })
 }
 
-/// Run `fut` on the Tokio runtime and deliver its output to `done` on the GTK main thread.
+/// Run `fut` on Tokio and deliver its output on the Slint UI thread.
 pub fn spawn<F, T>(fut: F, done: impl FnOnce(T) + 'static)
 where
     F: Future<Output = T> + Send + 'static,
     T: Send + 'static,
 {
     let handle = runtime().spawn(fut);
-    glib::spawn_future_local(async move {
+    slint::spawn_local(async move {
         match handle.await {
             Ok(value) => done(value),
             Err(e) => eprintln!("background task failed: {e}"),
         }
-    });
+    })
+    .expect("Slint event loop is not running");
 }

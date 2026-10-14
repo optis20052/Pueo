@@ -56,19 +56,6 @@ impl Color {
     pub const ALL: [Color; 8] =
         [Color::Red, Color::Orange, Color::Yellow, Color::Green, Color::Teal, Color::Blue, Color::Purple, Color::Gray];
 
-    pub fn name(self) -> &'static str {
-        match self {
-            Color::Red => "red",
-            Color::Orange => "orange",
-            Color::Yellow => "yellow",
-            Color::Green => "green",
-            Color::Teal => "teal",
-            Color::Blue => "blue",
-            Color::Purple => "purple",
-            Color::Gray => "gray",
-        }
-    }
-
     /// The swatch colour (GNOME palette), as 0-1 RGB.
     pub fn rgb(self) -> (f64, f64, f64) {
         let hex: u32 = match self {
@@ -352,19 +339,19 @@ impl ConnectionConfig {
 }
 
 pub fn config_dir() -> PathBuf {
-    gtk::glib::user_config_dir().join("pueo")
+    crate::platform::config_base().join("pueo")
 }
 
 /// Where query history lives.
 pub fn data_dir() -> PathBuf {
-    gtk::glib::user_data_dir().join("pueo")
+    crate::platform::data_base().join("pueo")
 }
 
 /// Move settings and history saved under the app's former name ("tabula"), once.
 pub fn migrate_from_tabula() {
     let moves = [
-        (gtk::glib::user_config_dir().join("tabula"), config_dir()),
-        (gtk::glib::user_data_dir().join("tabula"), data_dir()),
+        (crate::platform::config_base().join("tabula"), config_dir()),
+        (crate::platform::data_base().join("tabula"), data_dir()),
     ];
     for (old, new) in moves {
         if old.is_dir() && !new.exists() {
@@ -374,7 +361,7 @@ pub fn migrate_from_tabula() {
         }
     }
     // Custom group images are referenced by absolute path.
-    let (old_icons, new_icons) = (gtk::glib::user_config_dir().join("tabula").join("icons"), icons_dir());
+    let (old_icons, new_icons) = (crate::platform::config_base().join("tabula").join("icons"), icons_dir());
     let (old_icons, new_icons) = (old_icons.to_string_lossy(), new_icons.to_string_lossy());
     if let Ok(text) = std::fs::read_to_string(config_path())
         && text.contains(old_icons.as_ref())
@@ -445,6 +432,34 @@ pub fn save_sidebar_sections(connection_id: &str, sections: &std::collections::H
     std::fs::create_dir_all(config_dir())?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(&state)?)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
+}
+
+fn settings_path() -> PathBuf {
+    config_dir().join("settings.json")
+}
+
+/// 0 follows the system, 1 light, 2 dark.
+pub fn appearance() -> i32 {
+    std::fs::read(settings_path())
+        .ok()
+        .and_then(|d| serde_json::from_slice::<serde_json::Value>(&d).ok())
+        .and_then(|v| v.get("appearance")?.as_i64())
+        .map_or(0, |v| v as i32)
+}
+
+pub fn save_appearance(mode: i32) -> Result<()> {
+    let path = settings_path();
+    let mut settings = std::fs::read(&path)
+        .ok()
+        .and_then(|d| serde_json::from_slice::<serde_json::Value>(&d).ok())
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    settings["appearance"] = mode.into();
+    std::fs::create_dir_all(config_dir())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&settings)?)?;
     std::fs::rename(tmp, path)?;
     Ok(())
 }

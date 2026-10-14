@@ -1,86 +1,83 @@
-//! Passwords stored in the desktop keyring (GNOME Keyring / KWallet via Secret Service).
+//! Native credentials, retaining the original Secret Service format on Linux.
+#[cfg(target_os = "linux")]
+#[path = "secrets_linux.rs"]
+mod native;
+#[cfg(target_os = "linux")]
+pub use native::*;
 
-use std::time::Duration;
-
-use anyhow::{Context, Result};
-
-const APP: &str = "pueo";
-/// Passwords saved before the app was renamed are moved over on first use.
-const LEGACY_APP: &str = "tabula";
-
-/// How long to wait for the keyring (including a possible unlock prompt).
-const TIMEOUT: Duration = Duration::from_secs(30);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Slot {
-    /// The database password.
-    Database,
-    /// The SSH password, or the passphrase of the SSH key.
-    Ssh,
-}
-
-fn item_id(id: &str, slot: Slot) -> String {
-    match slot {
-        Slot::Database => id.to_string(),
-        Slot::Ssh => format!("{id}:ssh"),
-    }
-}
-
-fn attributes(id: &str) -> [(&'static str, &str); 2] {
-    [("application", APP), ("connection-id", id)]
-}
-
-fn legacy_attributes(id: &str) -> [(&'static str, &str); 2] {
-    [("application", LEGACY_APP), ("connection-id", id)]
-}
-
-pub async fn get_password(id: &str, slot: Slot) -> Result<Option<String>> {
-    let id = item_id(id, slot);
-    tokio::time::timeout(TIMEOUT, lookup(&id)).await.context("Timed out waiting for the keyring")?
-}
-
-async fn lookup(id: &str) -> Result<Option<String>> {
-    let keyring = oo7::Keyring::new().await?;
-    keyring.unlock().await?;
-    if let Some(item) = keyring.search_items(&attributes(id)).await?.first() {
-        let secret = item.secret().await?;
-        return Ok(Some(String::from_utf8_lossy(&secret).into_owned()));
-    }
-    let Some(item) = keyring.search_items(&legacy_attributes(id)).await?.into_iter().next() else {
-        return Ok(None);
+#[cfg(target_os = "macos")]
+mod native {
+    use anyhow::Result;
+    use security_framework::passwords::{
+        PasswordOptions, delete_generic_password, generic_password, set_generic_password,
     };
-    let secret = String::from_utf8_lossy(&item.secret().await?).into_owned();
-    // Re-save under the new name; the old item goes only once the copy exists.
-    let label = item.label().await?.replacen("Tabula", "Pueo", 1);
-    if keyring.create_item(&label, &attributes(id), secret.as_str(), true).await.is_ok() {
-        let _ = keyring.delete(&legacy_attributes(id)).await;
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Slot {
+        Database,
+        Ssh,
     }
-    Ok(Some(secret))
-}
-
-pub async fn set_password(id: &str, slot: Slot, label: &str, password: &str) -> Result<()> {
-    let id = item_id(id, slot);
-    let keyring = oo7::Keyring::new().await?;
-    keyring.unlock().await?;
-    // Whatever is set now replaces a password left under the old name.
-    keyring.delete(&legacy_attributes(&id)).await?;
-    if password.is_empty() {
-        keyring.delete(&attributes(&id)).await?;
-    } else {
-        let label = match slot {
-            Slot::Database => format!("Pueo: {label}"),
-            Slot::Ssh => format!("Pueo SSH: {label}"),
-        };
-        keyring.create_item(&label, &attributes(&id), password, true).await?;
+    fn account(id: &str, slot: Slot) -> String {
+        match slot {
+            Slot::Database => id.into(),
+            Slot::Ssh => format!("{id}:ssh"),
+        }
     }
-    Ok(())
-}
-
-pub async fn delete_passwords(id: &str) -> Result<()> {
-    let keyring = oo7::Keyring::new().await?;
-    for slot in [Slot::Database, Slot::Ssh] {
-        keyring.delete(&attributes(&item_id(id, slot))).await?;
-        keyring.delete(&legacy_attributes(&item_id(id, slot))).await?;
+    fn missing(error: &security_framework::base::Error) -> bool {
+        error.code() == -25300
     }
-    Ok(())
+    fn remove(service: &str, id: &str) -> Result<()> {
+        match delete_generic_password(service, id) {
+            Ok(()) => Ok(()),
+            Err(e) if missing(&e) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+    pub async fn get_password(id: &str, slot: Slot) -> Result<Option<String>> {
+        let id = account(id, slot);
+        tokio::task::spawn_blocking(move || {
+            for service in ["pueo", "tabula"] {
+                match generic_password(PasswordOptions::new_generic_password(service, &id)) {
+                    Ok(secret) => {
+                        if service == "tabula" {
+                            set_generic_password("pueo", &id, &secret)?;
+                            remove("tabula", &id)?;
+                        }
+                        return Ok(Some(String::from_utf8(secret)?));
+                    }
+                    Err(e) if missing(&e) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Ok(None)
+        })
+        .await?
+    }
+    pub async fn set_password(id: &str, slot: Slot, _label: &str, password: &str) -> Result<()> {
+        let (id, password) = (account(id, slot), password.to_owned());
+        tokio::task::spawn_blocking(move || {
+            if password.is_empty() {
+                remove("pueo", &id)?;
+            } else {
+                set_generic_password("pueo", &id, password.as_bytes())?;
+            }
+            remove("tabula", &id)
+        })
+        .await?
+    }
+    pub async fn delete_passwords(id: &str) -> Result<()> {
+        let id = id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            for slot in [Slot::Database, Slot::Ssh] {
+                for service in ["pueo", "tabula"] {
+                    remove(service, &account(&id, slot))?;
+                }
+            }
+            Ok(())
+        })
+        .await?
+    }
 }
+#[cfg(target_os = "macos")]
+pub use native::*;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+compile_error!("Pueo currently supports Linux and macOS");

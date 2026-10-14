@@ -1,8 +1,7 @@
 fn main() {
-    // Bundle the app icon and extra symbolic icons, so they show even when running from target/.
-    glib_build_tools::compile_resources(
-        &["data", "data/icons/symbolic"],
-        "data/resources.gresource.xml",
-        "pueo.gresource",
-    );
+    slint_build::compile_with_config(
+        "ui/app.slint",
+        slint_build::CompilerConfiguration::new().with_style("fluent".into()),
+    )
+    .expect("could not compile the Slint interface");
 }
