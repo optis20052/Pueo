@@ -9,7 +9,7 @@ use gtk::{gio, glib};
 use super::data_grid::{DataGrid, GridRow};
 use super::filter_bar::FilterBar;
 use super::row_inspector::RowInspector;
-use crate::db::{self, DbObject, FetchOptions, ObjectKind, RowChange, SharedDriver};
+use crate::db::{self, DbObject, FetchOptions, ForeignKey, ObjectKind, RowChange, SharedDriver};
 use crate::export::{self, Format};
 use crate::runtime;
 
@@ -106,6 +106,9 @@ pub struct TableTab {
     total: Cell<Option<u64>>,
     order: RefCell<Option<(String, bool)>>,
     pk: RefCell<Option<Vec<String>>>,
+    foreign_keys: RefCell<Vec<ForeignKey>>,
+    /// Opens a table filtered to one value: (table, column, value).
+    on_open_reference: RefCell<Option<Box<dyn Fn(DbObject, &str, &str)>>>,
     structure_loaded: Cell<bool>,
     indexes_loaded: Cell<bool>,
     /// Incremented on every load so stale responses are ignored.
@@ -113,7 +116,8 @@ pub struct TableTab {
 }
 
 impl TableTab {
-    pub fn new(driver: SharedDriver, object: DbObject) -> Rc<Self> {
+    /// `initial_filter`: start filtered to rows where (column) = (value).
+    pub fn new(driver: SharedDriver, object: DbObject, initial_filter: Option<(&str, &str)>) -> Rc<Self> {
         let is_key = object.kind == ObjectKind::Key;
 
         // Filter bar (SQL only): visual rules or raw WHERE.
@@ -348,11 +352,17 @@ impl TableTab {
             total: Cell::new(None),
             order: RefCell::new(None),
             pk: RefCell::new(None),
+            foreign_keys: RefCell::new(Vec::new()),
+            on_open_reference: RefCell::new(None),
             structure_loaded: Cell::new(false),
             indexes_loaded: Cell::new(false),
             generation: Cell::new(0),
         });
         tab.setup_actions();
+        if let Some((column, value)) = initial_filter {
+            tab.filter.preset(column, value);
+            filter_button.add_css_class("filter-on");
+        }
 
         let weak = Rc::downgrade(&tab);
         let apply_filter = move || {
@@ -414,6 +424,14 @@ impl TableTab {
             if let Some(t) = weak.upgrade() {
                 t.update_pending();
                 t.inspector.refresh();
+            }
+        });
+        let weak = Rc::downgrade(&tab);
+        tab.grid.connect_follow(move |column, value| {
+            let Some(t) = weak.upgrade() else { return };
+            let fk = t.foreign_keys.borrow().iter().find(|fk| fk.column == column).cloned();
+            if let (Some(fk), Some(open)) = (fk, t.on_open_reference.borrow().as_ref()) {
+                open(fk.target, &fk.target_column, value);
             }
         });
         let weak = Rc::downgrade(&tab);
@@ -543,6 +561,11 @@ impl TableTab {
         self.set_action_enabled("discard", n > 0);
     }
 
+    /// Called when a foreign-key value is double-clicked, to open the row it points at.
+    pub fn connect_open_reference(&self, f: impl Fn(DbObject, &str, &str) + 'static) {
+        *self.on_open_reference.borrow_mut() = Some(Box::new(f));
+    }
+
     pub fn has_changes(&self) -> bool {
         self.grid.has_changes()
     }
@@ -659,6 +682,28 @@ impl TableTab {
                 t.load();
             },
         );
+        self.load_foreign_keys();
+    }
+
+    /// Foreign keys come from the Structure view's query, which then needn't run again.
+    fn load_foreign_keys(self: &Rc<Self>) {
+        if self.object.kind != ObjectKind::Table || !self.driver.kind().is_sql() {
+            return;
+        }
+        let driver = self.driver.clone();
+        let obj = self.object.clone();
+        let weak = Rc::downgrade(self);
+        runtime::spawn(async move { driver.structure(&obj).await }, move |res| {
+            let Some(t) = weak.upgrade() else { return };
+            let Ok(r) = res else { return };
+            let fks = db::parse_foreign_keys(t.driver.kind(), &r);
+            t.grid.set_link_columns(fks.iter().map(|fk| fk.column.clone()).collect());
+            *t.foreign_keys.borrow_mut() = fks;
+            if !t.structure_loaded.get() {
+                t.structure.set_result(&r);
+                t.structure_loaded.set(true);
+            }
+        });
     }
 
 

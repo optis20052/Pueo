@@ -221,6 +221,21 @@ impl FilterBar {
         self.apply_button.set_visible(dirty);
     }
 
+    /// Start with the rule `column = value` applied and the bar open, before the table
+    /// has loaded (the column list is filled in later and keeps the selection).
+    pub fn preset(self: &Rc<Self>, column: &str, value: &str) {
+        self.clear();
+        self.set_columns(&[column.to_string()]);
+        if let Some(rule) = self.rules.borrow().first() {
+            rule.column.set_selected(0);
+            rule.op.set_selected(Op::ALL.iter().position(|o| *o == Op::Eq).unwrap_or(0) as u32);
+            rule.value.set_text(value);
+        }
+        *self.applied.borrow_mut() = self.where_clause();
+        self.widget.set_reveal_child(true);
+        self.refresh_dirty();
+    }
+
     /// Update the column choices, keeping each rule's column where possible.
     pub fn set_columns(&self, names: &[String]) {
         let current: Vec<String> = self.columns.snapshot().iter().filter_map(|o| o.downcast_ref::<gtk::StringObject>().map(|s| s.string().to_string())).collect();
