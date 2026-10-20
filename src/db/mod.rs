@@ -577,6 +577,43 @@ pub(crate) fn bytes_to_string(b: &[u8]) -> String {
     }
 }
 
+/// A column of a table that points at a row of another table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForeignKey {
+    pub column: String,
+    /// The referenced table (always a table, never a view).
+    pub target: DbObject,
+    pub target_column: String,
+}
+
+/// Read the foreign keys out of a `Driver::structure` result: its `column` and `references`
+/// columns, where references look like `schema.table(col)` (SQLite: `table(col)`, in schema
+/// `main`). A column in several foreign keys uses the first.
+pub fn parse_foreign_keys(kind: DbKind, structure: &QueryResult) -> Vec<ForeignKey> {
+    let pos = |name: &str| structure.columns.iter().position(|c| c == name);
+    let (Some(col_idx), Some(ref_idx)) = (pos("column"), pos("references")) else { return Vec::new() };
+    structure
+        .rows
+        .iter()
+        .filter_map(|row| {
+            let column = row.get(col_idx)?.clone()?;
+            let first = row.get(ref_idx)?.as_deref()?.split(", ").next()?.trim();
+            let open = first.rfind('(')?;
+            let target_column = first[open + 1..].strip_suffix(')')?.to_string();
+            let table = &first[..open];
+            let (schema, name) = match kind {
+                DbKind::Sqlite => ("main", table),
+                _ => table.split_once('.')?,
+            };
+            if name.is_empty() || target_column.is_empty() || target_column == "?" {
+                return None;
+            }
+            let target = DbObject { schema: schema.into(), name: name.into(), ..Default::default() };
+            Some(ForeignKey { column, target, target_column })
+        })
+        .collect()
+}
+
 /// Integration tests against live servers. Run with e.g.
 /// `PUEO_PG=localhost:5432:postgres:secret cargo test -- --ignored`
 /// (format `host:port:user:password`; also PUEO_MY and PUEO_RD).
@@ -602,6 +639,29 @@ mod parse_tests {
                 r#"INSERT INTO "public"."users_copy" SELECT * FROM "public"."users""#,
             ]
         );
+    }
+
+    #[test]
+    fn parses_foreign_keys() {
+        use super::*;
+        let s = |v: &str| Some(v.to_string());
+        let st = QueryResult::from_rows(
+            &["column", "type", "references"],
+            vec![
+                vec![s("id"), s("int"), None],
+                vec![s("projectOrderId"), s("int"), s("public.projectOrder(id), public.other(x)")],
+                vec![s("odd"), s("int"), s("public.a(b)c(id)")],
+            ],
+        );
+        let fks = parse_foreign_keys(DbKind::Postgres, &st);
+        assert_eq!(fks.len(), 2);
+        assert_eq!(fks[0].column, "projectOrderId");
+        assert_eq!((fks[0].target.schema.as_str(), fks[0].target.name.as_str()), ("public", "projectOrder"));
+        assert_eq!(fks[0].target_column, "id");
+        assert_eq!(fks[1].target.name, "a(b)c");
+        let lite = QueryResult::from_rows(&["column", "references"], vec![vec![s("owner"), s("people(id)")]]);
+        let fks = parse_foreign_keys(DbKind::Sqlite, &lite);
+        assert_eq!((fks[0].target.schema.as_str(), fks[0].target.name.as_str()), ("main", "people"));
     }
 
     #[test]
