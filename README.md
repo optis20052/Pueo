@@ -64,6 +64,8 @@ Supports **PostgreSQL**, **MySQL / MariaDB**, **SQLite** and **Redis**.
   - filter bar with `column operator value` rules, or a raw SQL `WHERE` clause
   - click a column header to sort on the server
   - Data / Structure / Indexes views
+  - **Follow foreign keys**: hold Ctrl to highlight foreign-key values, then Ctrl+click one to open the
+    referenced table in a new tab, filtered to that row
 
 **Row inspector** (Ctrl+Shift+I): a right-hand panel showing the selected row as an editable form, with
 dropdowns for enum/boolean columns, multi-line fields for long text and JSON, and Set NULL per field.

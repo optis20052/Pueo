@@ -64,6 +64,11 @@ columnview.data-grid > header > button {
   text-decoration-line: line-through;
   opacity: 0.7;
 }
+/* Foreign-key values while Ctrl is held: Ctrl+click opens the referenced row. */
+columnview.show-links .link-cell {
+  color: @accent_color;
+  text-decoration-line: underline;
+}
 .null-cell {
   opacity: 0.4;
   font-style: italic;

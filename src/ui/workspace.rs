@@ -777,9 +777,24 @@ impl Workspace {
             self.tab_view.set_selected_page(&page);
             return;
         }
-        let tab = TableTab::new(self.driver(), obj.clone());
+        self.add_table_tab(obj, None);
+    }
+
+    /// Open `obj` in a new tab, optionally filtered to rows where (column) = (value).
+    fn add_table_tab(self: &Rc<Self>, obj: DbObject, filter: Option<(&str, &str)>) {
+        let tab = TableTab::new(self.driver(), obj.clone(), filter);
+        let weak = Rc::downgrade(self);
+        // Double-clicking a foreign-key value opens the referenced row in a new tab.
+        tab.connect_open_reference(move |target, column, value| {
+            if let Some(ws) = weak.upgrade() {
+                ws.add_table_tab(target, Some((column, value)));
+            }
+        });
         let page = self.tab_view.append(&tab.widget);
-        page.set_title(&obj.name);
+        match filter {
+            Some((column, value)) => page.set_title(&format!("{} ({column} = {value})", obj.name)),
+            None => page.set_title(&obj.name),
+        }
         page.set_tooltip(&format!("{}.{}", obj.schema, obj.name));
         page.set_icon(Some(&gio::ThemedIcon::new(obj.kind.icon_name())));
         self.tab_view.set_selected_page(&page);

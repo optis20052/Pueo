@@ -54,6 +54,16 @@ pub struct DataGrid {
     key_names: RefCell<Vec<String>>,
     /// Columns edited with a dropdown of fixed values.
     choices: RefCell<Choices>,
+    /// Foreign-key columns: Ctrl+clicking a value's text follows it.
+    link_columns: RefCell<Vec<String>>,
+    /// Called with (column, value) when a link is followed.
+    on_follow: RefCell<Option<Box<dyn Fn(&str, &str)>>>,
+    /// Ctrl is held: links are highlighted.
+    ctrl: StdCell<bool>,
+    /// The cell under the pointer and the pointer's x in it, to update its cursor when Ctrl changes.
+    hover: RefCell<Option<(glib::WeakRef<gtk::Widget>, glib::WeakRef<gtk::ListItem>, usize, f64)>>,
+    /// Watches Ctrl on the window while the grid is shown.
+    window_keys: RefCell<Option<(glib::WeakRef<gtk::Widget>, gtk::EventControllerKey)>>,
     /// The single open inline editor: its close function (true = save) and its entry.
     active_edit: RefCell<Option<(EditCloser, glib::WeakRef<gtk::Entry>)>>,
     menu: gtk::PopoverMenu,
@@ -271,6 +281,11 @@ impl DataGrid {
             suppress_sort: StdCell::new(false),
             last_sort: RefCell::new(None),
             key_names: RefCell::new(Vec::new()),
+            link_columns: RefCell::new(Vec::new()),
+            on_follow: RefCell::new(None),
+            ctrl: StdCell::new(false),
+            hover: RefCell::new(None),
+            window_keys: RefCell::new(None),
             active_edit: RefCell::new(None),
             choices: RefCell::new(Choices::new()),
             menu,
@@ -279,6 +294,7 @@ impl DataGrid {
             context: RefCell::new(None),
         });
         grid.connect_signals();
+        grid.watch_ctrl();
         grid.setup_actions();
         grid.update_action_state();
         grid
@@ -602,6 +618,118 @@ impl DataGrid {
 
     pub fn set_choices(&self, choices: Choices) {
         *self.choices.borrow_mut() = choices;
+    }
+
+    /// Mark foreign-key columns, whose values can be followed with Ctrl+click.
+    pub fn set_link_columns(&self, names: Vec<String>) {
+        if *self.link_columns.borrow() == names {
+            return;
+        }
+        *self.link_columns.borrow_mut() = names;
+        // Re-bind the visible cells so they pick up the link style.
+        let n = self.store.n_items();
+        self.store.items_changed(0, n, n);
+    }
+
+    fn is_link_column(&self, idx: usize) -> bool {
+        self.columns.borrow().get(idx).is_some_and(|c| self.link_columns.borrow().contains(c))
+    }
+
+    /// Show or hide the links (CSS on the view) as Ctrl goes down or up.
+    fn set_ctrl(&self, held: bool) {
+        if self.ctrl.replace(held) == held {
+            return;
+        }
+        if held {
+            self.view.add_css_class("show-links");
+        } else {
+            self.view.remove_css_class("show-links");
+        }
+        self.update_hover_cursor();
+    }
+
+    /// A hand over a link's text while Ctrl is held, the normal cursor otherwise.
+    fn update_hover_cursor(&self) {
+        let hover = self.hover.borrow().clone();
+        let Some((cell, item, idx, x)) = hover else { return };
+        let (Some(cell), Some(item)) = (cell.upgrade(), item.upgrade()) else { return };
+        let on_link = self.ctrl.get() && self.link_at(item.position(), idx, &cell, x).is_some();
+        cell.set_cursor_from_name(on_link.then_some("pointer"));
+    }
+
+    /// Watch Ctrl on the whole window (not just when the grid has focus) while the grid is mapped.
+    fn watch_ctrl(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.widget.connect_map(move |w| {
+            let (Some(grid), Some(root)) = (weak.upgrade(), w.root()) else { return };
+            let root = root.upcast::<gtk::Widget>();
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            let is_ctrl = |k: gdk::Key| k == gdk::Key::Control_L || k == gdk::Key::Control_R;
+            let wk = Rc::downgrade(&grid);
+            keys.connect_key_pressed(move |_, key, _, _| {
+                if let (Some(g), true) = (wk.upgrade(), is_ctrl(key)) {
+                    g.set_ctrl(true);
+                }
+                glib::Propagation::Proceed
+            });
+            let wk = Rc::downgrade(&grid);
+            keys.connect_key_released(move |_, key, _, _| {
+                if let (Some(g), true) = (wk.upgrade(), is_ctrl(key)) {
+                    g.set_ctrl(false);
+                }
+            });
+            root.add_controller(keys.clone());
+            if let Some((old_root, old)) = grid.window_keys.replace(Some((root.downgrade(), keys))) {
+                if let Some(r) = old_root.upgrade() {
+                    r.remove_controller(&old);
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.widget.connect_unmap(move |_| {
+            let Some(grid) = weak.upgrade() else { return };
+            if let Some((root, keys)) = grid.window_keys.take() {
+                if let Some(r) = root.upgrade() {
+                    r.remove_controller(&keys);
+                }
+            }
+            // The key release may never arrive (tab switched with Ctrl+PageDown, window left).
+            grid.set_ctrl(false);
+        });
+    }
+
+    /// The (column, value) of the link in cell (`pos`, `idx`) if `x` (in `cell` coordinates)
+    /// is on its text; clicks beside the text are left for editing.
+    fn link_at(&self, pos: u32, idx: usize, cell: &gtk::Widget, x: f64) -> Option<(String, String)> {
+        let column = self.columns.borrow().get(idx).cloned()?;
+        if !self.link_columns.borrow().contains(&column) {
+            return None;
+        }
+        let value = self.model().item(pos).and_then(|obj| row_of(&obj).current.get(idx).cloned().flatten())?;
+        let label = cell.downcast_ref::<gtk::Stack>()?.child_by_name("label")?;
+        let point = cell.compute_point(&label, &graphene::Point::new(x as f32, 0.0))?;
+        let label = label.downcast::<gtk::Label>().ok()?;
+        let (offset, _) = label.layout_offsets();
+        let (_, text) = label.layout().pixel_extents();
+        let start = (offset + text.x()) as f32;
+        (point.x() >= start && point.x() <= start + text.width() as f32).then_some((column, value))
+    }
+
+    pub fn connect_follow(&self, f: impl Fn(&str, &str) + 'static) {
+        *self.on_follow.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Follow the link in cell (`pos`, `idx`) if `x` is on its text. Returns whether it did.
+    fn follow_link(&self, pos: u32, idx: usize, cell: &gtk::Widget, x: f64) -> bool {
+        let Some((column, value)) = self.link_at(pos, idx, cell, x) else { return false };
+        match self.on_follow.borrow().as_ref() {
+            Some(f) => {
+                f(&column, &value);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn set_key_names(&self, names: Vec<String>) {
@@ -1217,9 +1345,9 @@ impl DataGrid {
             stack.set_widget_name(&format!("cell-{idx}"));
             let click = gtk::GestureClick::builder().button(0).build();
             let item_ref = item.downgrade();
-            let weak = weak.clone();
+            let weak_click = weak.clone();
             click.connect_pressed(move |gesture, n_press, x, y| {
-                let (Some(grid), Some(item)) = (weak.upgrade(), item_ref.upgrade()) else { return };
+                let (Some(grid), Some(item)) = (weak_click.upgrade(), item_ref.upgrade()) else { return };
                 let Some(widget) = gesture.widget() else { return };
                 // Clicks inside an open editor belong to the editor.
                 if widget.downcast_ref::<gtk::Stack>().is_some_and(|s| s.child_by_name("edit").is_some()) {
@@ -1231,6 +1359,13 @@ impl DataGrid {
                         gesture.set_state(gtk::EventSequenceState::Claimed);
                         grid.show_context_menu(pos, idx, &widget, x, y);
                     }
+                    // Ctrl+click on the value's text of a foreign key: open the referenced row.
+                    (1, 1)
+                        if gesture.current_event_state().contains(gdk::ModifierType::CONTROL_MASK)
+                            && grid.follow_link(pos, idx, &widget, x) =>
+                    {
+                        gesture.set_state(gtk::EventSequenceState::Claimed);
+                    }
                     (1, 2) if grid.editable.get() => {
                         gesture.set_state(gtk::EventSequenceState::Claimed);
                         grid.start_edit(pos, idx, &widget);
@@ -1239,6 +1374,24 @@ impl DataGrid {
                 }
             });
             stack.add_controller(click);
+            // Track the hovered cell, for the hand cursor over links while Ctrl is held.
+            let motion = gtk::EventControllerMotion::new();
+            let (weak_m, item_m) = (weak.clone(), item.downgrade());
+            motion.connect_motion(move |m, x, _| {
+                let (Some(grid), Some(widget)) = (weak_m.upgrade(), m.widget()) else { return };
+                *grid.hover.borrow_mut() = Some((widget.downgrade(), item_m.clone(), idx, x));
+                grid.set_ctrl(m.current_event_state().contains(gdk::ModifierType::CONTROL_MASK));
+                grid.update_hover_cursor();
+            });
+            let weak_m = weak.clone();
+            motion.connect_leave(move |m| {
+                let Some(grid) = weak_m.upgrade() else { return };
+                if let Some(w) = m.widget() {
+                    w.set_cursor(None);
+                }
+                grid.hover.borrow_mut().take();
+            });
+            stack.add_controller(motion);
             item.set_child(Some(&stack));
         });
         let weak = Rc::downgrade(self);
@@ -1258,6 +1411,12 @@ impl DataGrid {
             let label = stack.child_by_name("label").and_downcast::<gtk::Label>().unwrap();
             let Some(obj) = item.item() else { return };
             render_label(&label, &row_of(&obj), idx);
+            let is_link = weak.upgrade().is_some_and(|g| g.is_link_column(idx)) && row_of(&obj).current[idx].is_some();
+            if is_link {
+                label.add_css_class("link-cell");
+            } else {
+                label.remove_css_class("link-cell");
+            }
         });
         factory
     }
