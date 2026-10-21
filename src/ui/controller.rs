@@ -1900,20 +1900,24 @@ impl Controller {
         );
     }
     /// Route native Edit-menu actions through Slint's focused text input.
+    /// Defer dispatch until the native menu callback releases Slint's menu borrow.
     /// Disable the menu accelerators during dispatch so the generated key event cannot invoke the menu recursively.
     fn edit_text(&self,action: &str) {
         use slint::platform::{Key,WindowEvent};
-        let Some(ui) = self.ui.upgrade() else { return; };
         let (key,shift) = match action { "undo" => ("z",false), "redo" => ("z",true), "cut" => ("x",false), "copy" => ("c",false), "paste" => ("v",false), "select-all" => ("a",false), _ => return };
-        ui.set_edit_dispatching(true);
-        let window = ui.window();
-        window.dispatch_event(WindowEvent::KeyPressed { text: Key::Control.into() });
-        if shift { window.dispatch_event(WindowEvent::KeyPressed { text: Key::Shift.into() }); }
-        window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
-        window.dispatch_event(WindowEvent::KeyReleased { text: key.into() });
-        if shift { window.dispatch_event(WindowEvent::KeyReleased { text: Key::Shift.into() }); }
-        window.dispatch_event(WindowEvent::KeyReleased { text: Key::Control.into() });
-        ui.set_edit_dispatching(false);
+        let weak = self.ui.clone();
+        slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+            let Some(ui) = weak.upgrade() else { return; };
+            ui.set_edit_dispatching(true);
+            let window = ui.window();
+            window.dispatch_event(WindowEvent::KeyPressed { text: Key::Control.into() });
+            if shift { window.dispatch_event(WindowEvent::KeyPressed { text: Key::Shift.into() }); }
+            window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+            window.dispatch_event(WindowEvent::KeyReleased { text: key.into() });
+            if shift { window.dispatch_event(WindowEvent::KeyReleased { text: Key::Shift.into() }); }
+            window.dispatch_event(WindowEvent::KeyReleased { text: Key::Control.into() });
+            ui.set_edit_dispatching(false);
+        });
     }
     fn command(self: &App, action: &str) {
         let Some(ui) = self.ui.upgrade() else {
@@ -3543,6 +3547,7 @@ mod tests {
     struct TestPlatform {
         window: Rc<MinimalSoftwareWindow>,
         sender: mpsc::Sender<Event>,
+        clipboard: RefCell<String>,
     }
     struct Proxy(mpsc::Sender<Event>);
     impl EventLoopProxy for Proxy {
@@ -3559,6 +3564,12 @@ mod tests {
         }
     }
     impl Platform for TestPlatform {
+        fn set_clipboard_text(&self, text: &str, _: slint::platform::Clipboard) {
+            *self.clipboard.borrow_mut() = text.into();
+        }
+        fn clipboard_text(&self, _: slint::platform::Clipboard) -> Option<String> {
+            Some(self.clipboard.borrow().clone())
+        }
         fn create_window_adapter(
             &self,
         ) -> std::result::Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
@@ -3592,6 +3603,7 @@ mod tests {
         slint::platform::set_platform(Box::new(TestPlatform {
             window: window.clone(),
             sender,
+            clipboard: RefCell::new("SELECT 'café 🦉';".into()),
         }))
         .unwrap();
         let ui = AppWindow::new().unwrap();
@@ -3728,6 +3740,32 @@ mod tests {
                 .unwrap();
         }
         ui.hide().unwrap();
+        // Exercise native Edit-menu dispatch with a focused SQL input, including
+        // the real command callback (text edits can call back into the controller).
+        let a = app.clone();
+        ui.on_command(move |action| a.command(action.as_str()));
+        app.new_query("".into(), "Paste regression");
+        ui.show().unwrap();
+        ui.set_editor_focus_request(ui.get_editor_focus_request() + 1);
+        slint::platform::update_timers_and_animations();
+        ui.invoke_command("edit:paste".into());
+        assert_eq!(ui.get_sql(), "", "menu dispatch must wait for the callback to return");
+        pump(&receiver, || ui.get_sql() == "SELECT 'café 🦉';");
+        assert!(!ui.get_edit_dispatching());
+        ui.invoke_command("edit:select-all".into());
+        slint::platform::update_timers_and_animations();
+        ui.invoke_command("edit:paste".into());
+        pump(&receiver, || !ui.get_edit_dispatching());
+        assert_eq!(ui.get_sql(), "SELECT 'café 🦉';", "paste replaces the selection");
+        ui.set_auth_dialog(true);
+        // Instantiate the conditional dialog and run the password field's autofocus.
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut pixels, 1280);
+        });
+        slint::platform::update_timers_and_animations();
+        ui.invoke_command("edit:paste".into());
+        pump(&receiver, || ui.get_auth_password() == "SELECT 'café 🦉';");
+        ui.hide().unwrap();
     }
     #[test]
     #[ignore = "requires PUEO_LOCAL_CONFIG pointing to an explicitly local PostgreSQL connection"]
@@ -3749,7 +3787,9 @@ mod tests {
             .map(str::to_owned);
         let (sender, receiver) = mpsc::channel();
         let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-        slint::platform::set_platform(Box::new(TestPlatform { window, sender })).unwrap();
+        slint::platform::set_platform(Box::new(TestPlatform {
+            window, sender, clipboard: RefCell::new(String::new()),
+        })).unwrap();
         let ui = AppWindow::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
         crate::platform::set_test_base(dir.path().into());

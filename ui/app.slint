@@ -225,6 +225,16 @@ component Field inherits Rectangle {
                 text: root.placeholder; color: Theme.faint; font-size: root.font-size;
                 width: parent.width; height: parent.height; vertical-alignment: center; overflow: elide;
             }
+            ContextMenuArea {
+                enabled: root.enabled;
+                Menu {
+                    MenuItem { title: "Cut"; enabled: !root.read-only && !root.password; activated => { input.focus(); input.cut(); } }
+                    MenuItem { title: "Copy"; enabled: !root.password; activated => { input.focus(); input.copy(); } }
+                    MenuItem { title: "Paste"; enabled: !root.read-only; activated => { input.focus(); input.paste(); } }
+                    MenuSeparator { }
+                    MenuItem { title: "Select All"; activated => { input.focus(); input.select-all(); } }
+                }
+            }
         }
     }
 }
