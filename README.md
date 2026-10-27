@@ -46,6 +46,11 @@ Supports **PostgreSQL**, **MySQL / MariaDB**, **SQLite** and **Redis**.
   - Right-click a badge for New Query / Close Connection, or middle-click it to close.
   - Opening a connection that is already open switches to it.
 - **Database switcher** in the sidebar: reconnects to another database on the same server
+- **Manage databases** (PostgreSQL, MySQL) from the switcher: New Database…, and each row's ⋯ menu (or
+  right-click) to rename (PostgreSQL), delete (type the name to confirm) or back up / restore it
+- **Backup & restore** a whole database from the save button in the top bar: `pg_dump` (custom archive or
+  plain SQL) / `pg_restore` / `psql`, `mysqldump` / `mysql` (or the MariaDB tools), through the SSH tunnel
+  when the connection has one. SQLite uses its built-in backup API. Cancel stops the running tool.
 - `pueo file.db` opens a SQLite file directly
 
 **Browsing**
