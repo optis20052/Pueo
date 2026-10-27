@@ -66,6 +66,11 @@ impl DbKind {
     pub fn is_sql(self) -> bool {
         self != DbKind::Redis
     }
+
+    /// Servers whose databases can be created and dropped from the app.
+    pub fn manages_databases(self) -> bool {
+        matches!(self, DbKind::Postgres | DbKind::Mysql)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -482,6 +487,24 @@ pub fn drop_sql(kind: DbKind, obj: &DbObject, cascade: bool) -> String {
     sql
 }
 
+pub fn create_database_sql(kind: DbKind, name: &str) -> String {
+    format!("CREATE DATABASE {}", quote_ident(kind, name))
+}
+
+/// `force` (PostgreSQL 13+): disconnect other sessions first instead of failing.
+pub fn drop_database_sql(kind: DbKind, name: &str, force: bool) -> String {
+    let mut sql = format!("DROP DATABASE {}", quote_ident(kind, name));
+    if force && kind == DbKind::Postgres {
+        sql.push_str(" WITH (FORCE)");
+    }
+    sql
+}
+
+/// PostgreSQL only: MySQL has no way to rename a database.
+pub fn rename_database_sql(kind: DbKind, from: &str, to: &str) -> String {
+    format!("ALTER DATABASE {} RENAME TO {}", quote_ident(kind, from), quote_ident(kind, to))
+}
+
 /// Copy a table's structure (and optionally its rows) to `new_name` in the same schema.
 pub fn clone_sql(kind: DbKind, obj: &DbObject, new_name: &str, with_data: bool) -> Vec<String> {
     let source = qualified_name(kind, obj);
@@ -632,6 +655,10 @@ mod parse_tests {
         assert_eq!(finally.as_deref(), Some("SET FOREIGN_KEY_CHECKS = 1"));
         assert_eq!(drop_sql(DbKind::Postgres, &t, true), r#"DROP TABLE "public"."users" CASCADE"#);
         assert_eq!(drop_sql(DbKind::Mysql, &t, true), "DROP TABLE `public`.`users`");
+        assert_eq!(create_database_sql(DbKind::Mysql, "my`db"), "CREATE DATABASE `my``db`");
+        assert_eq!(drop_database_sql(DbKind::Postgres, "ERP", true), r#"DROP DATABASE "ERP" WITH (FORCE)"#);
+        assert_eq!(drop_database_sql(DbKind::Mysql, "shop", true), "DROP DATABASE `shop`");
+        assert_eq!(rename_database_sql(DbKind::Postgres, "a", "b"), r#"ALTER DATABASE "a" RENAME TO "b""#);
         assert_eq!(
             clone_sql(DbKind::Postgres, &t, "users_copy", true),
             vec![

@@ -17,6 +17,8 @@ use crate::db::log::QueryLog;
 use crate::db::{self, DbKind, DbObject, ObjectKind, ObjectList, SharedDriver};
 use crate::{runtime, secrets};
 
+mod backup_menu;
+mod database_menu;
 mod object_menu;
 
 enum Tab {
@@ -24,9 +26,8 @@ enum Tab {
     Query(Rc<QueryTab>),
 }
 
-/// Fetch the passwords from the keyring and connect (optionally through SSH).
-/// Everything the driver sends is recorded into `log`.
-pub async fn open_driver(cfg: ConnectionConfig, log: Arc<QueryLog>) -> anyhow::Result<(SharedDriver, String)> {
+/// The database and SSH passwords saved in the keyring for `cfg`.
+pub async fn credentials(cfg: &ConnectionConfig) -> (Option<String>, Option<String>) {
     let lookup = |slot| {
         let id = cfg.id.clone();
         async move {
@@ -42,6 +43,13 @@ pub async fn open_driver(cfg: ConnectionConfig, log: Arc<QueryLog>) -> anyhow::R
     } else {
         None
     };
+    (password, ssh_secret)
+}
+
+/// Fetch the passwords from the keyring and connect (optionally through SSH).
+/// Everything the driver sends is recorded into `log`.
+pub async fn open_driver(cfg: ConnectionConfig, log: Arc<QueryLog>) -> anyhow::Result<(SharedDriver, String)> {
+    let (password, ssh_secret) = credentials(&cfg).await;
     let driver = db::logged(db::connect(&cfg, password, ssh_secret).await?, log);
     let info = driver.server_info().await.unwrap_or_default();
     Ok((driver, info))
@@ -231,6 +239,19 @@ impl Workspace {
             .tooltip_text("Console (Ctrl+Shift+C)")
             .build();
         content_header.pack_end(&console_button);
+        // Backup & restore of the whole database; the actions live in the workspace's group.
+        let actions = gio::SimpleActionGroup::new();
+        let backup_menu = gio::Menu::new();
+        backup_menu.append(Some("Back Up Database…"), Some("ws.backup"));
+        backup_menu.append(Some("Restore Database…"), Some("ws.restore"));
+        let backup_button = gtk::MenuButton::builder()
+            .icon_name("document-save-symbolic")
+            .tooltip_text("Backup & Restore")
+            .menu_model(&backup_menu)
+            .visible(config.kind.is_sql())
+            .build();
+        backup_button.insert_action_group("ws", Some(&actions));
+        content_header.pack_end(&backup_button);
 
         let empty = adw::StatusPage::builder()
             .icon_name("x-office-spreadsheet-symbolic")
@@ -301,7 +322,7 @@ impl Workspace {
         let config_schema = config.schema.trim().to_string();
         let ws = Rc::new(Workspace {
             widget,
-            actions: gio::SimpleActionGroup::new(),
+            actions,
             config: RefCell::new(config),
             driver,
             subtitle,
@@ -329,6 +350,7 @@ impl Workspace {
         });
 
         ws.setup_sidebar();
+        ws.setup_database_management();
         ws.setup_actions(&split);
         ws.setup_paste_shortcut();
         ws.setup_tabs();
@@ -479,7 +501,9 @@ impl Workspace {
     }
 
     fn setup_actions(self: &Rc<Self>, split: &adw::OverlaySplitView) {
-        let actions: [(&str, fn(&Rc<Workspace>)); 9] = [
+        let actions: [(&str, fn(&Rc<Workspace>)); 11] = [
+            ("backup", |ws| ws.start_backup(ws.current_database())),
+            ("restore", |ws| ws.start_restore(ws.current_database())),
             ("toggle-console", |ws| ws.console.set_open(!ws.console.is_open())),
             ("new-query", |ws| ws.new_query_tab("")),
             ("close-tab", |ws| {
@@ -703,17 +727,22 @@ impl Workspace {
         runtime::spawn(async move { driver.list_databases().await }, move |res| {
             let Some(ws) = weak.upgrade() else { return };
             let names = res.unwrap_or_default();
-            let cfg = ws.config.borrow().clone();
-            let current = match (cfg.kind, cfg.database.trim()) {
-                (_, d) if !d.is_empty() => d.to_string(),
-                (DbKind::Postgres, _) => "postgres".into(),
-                (DbKind::Redis, _) => "0".into(),
-                _ => String::new(),
-            };
+            let current = ws.current_database();
             ws.db_picker.set_items(&names, &current);
             ws.db_button.set_tooltip_text(Some(&format!("Switch Database (current: {current})")));
-            ws.db_button.set_visible(names.len() > 1);
+            ws.db_button.set_visible(names.len() > 1 || ws.kind().manages_databases());
         });
+    }
+
+    /// The database this workspace is connected to, with the server's default filled in.
+    fn current_database(&self) -> String {
+        let cfg = self.config.borrow();
+        match (cfg.kind, cfg.database.trim()) {
+            (_, d) if !d.is_empty() => d.to_string(),
+            (DbKind::Postgres, _) => "postgres".into(),
+            (DbKind::Redis, _) => "0".into(),
+            _ => String::new(),
+        }
     }
 
     /// Reconnect to another database on the same server. Open tabs are closed.

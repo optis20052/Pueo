@@ -9,8 +9,11 @@ pub struct Picker {
     pub popover: gtk::Popover,
     list: gtk::ListBox,
     search: gtk::SearchEntry,
+    content: gtk::Box,
     row_icon: &'static str,
     on_pick: RefCell<Option<Rc<dyn Fn(String)>>>,
+    /// Opens a row's menu, anchored to its "⋯" button.
+    on_menu: RefCell<Option<Rc<dyn Fn(String, gtk::Widget)>>>,
 }
 
 impl Picker {
@@ -32,7 +35,15 @@ impl Picker {
         content.append(&scroll);
         let popover = gtk::Popover::builder().child(&content).build();
 
-        let picker = Rc::new(Picker { popover, list, search, row_icon, on_pick: RefCell::new(None) });
+        let picker = Rc::new(Picker {
+            popover,
+            list,
+            search,
+            content,
+            row_icon,
+            on_pick: RefCell::new(None),
+            on_menu: RefCell::new(None),
+        });
 
         let weak = Rc::downgrade(&picker);
         picker.list.connect_row_activated(move |_, row| {
@@ -84,6 +95,17 @@ impl Picker {
         *self.on_pick.borrow_mut() = Some(Rc::new(f));
     }
 
+    /// Give every row but the current one a "⋯" button (also opened by right-click).
+    /// Takes effect on the next `set_items`.
+    pub fn connect_row_menu(&self, f: impl Fn(String, gtk::Widget) + 'static) {
+        *self.on_menu.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Add a widget under the list, such as a "New…" button.
+    pub fn add_footer(&self, widget: &impl IsA<gtk::Widget>) {
+        self.content.append(widget);
+    }
+
     /// Replace the choices; `current` gets a check mark.
     pub fn set_items(&self, names: &[String], current: &str) {
         self.list.remove_all();
@@ -101,7 +123,28 @@ impl Picker {
             let check = gtk::Image::from_icon_name("object-select-symbolic");
             check.set_opacity(if name == current { 1.0 } else { 0.0 });
             row_box.append(&check);
-            self.list.append(&gtk::ListBoxRow::builder().child(&row_box).name(name).build());
+            let row = gtk::ListBoxRow::builder().child(&row_box).name(name).build();
+            if let Some(on_menu) = self.on_menu.borrow().clone().filter(|_| name != current) {
+                let more = gtk::Button::builder()
+                    .icon_name("view-more-symbolic")
+                    .tooltip_text("More")
+                    .valign(gtk::Align::Center)
+                    .css_classes(["flat", "circular", "picker-row-menu"])
+                    .build();
+                more.set_cursor_from_name(Some("pointer"));
+                let (f, n) = (on_menu.clone(), name.clone());
+                more.connect_clicked(move |b| f(n.clone(), b.clone().upcast()));
+                let right_click = gtk::GestureClick::builder().button(gtk::gdk::BUTTON_SECONDARY).build();
+                let (n, anchor) = (name.clone(), more.downgrade());
+                right_click.connect_pressed(move |_, _, _, _| {
+                    if let Some(anchor) = anchor.upgrade() {
+                        on_menu(n.clone(), anchor.upcast());
+                    }
+                });
+                row.add_controller(right_click);
+                row_box.append(&more);
+            }
+            self.list.append(&row);
         }
     }
 }

@@ -254,7 +254,7 @@ impl Workspace {
 
     /// Run `stmts` one by one on the connection, then `finally` whatever happened.
     /// Errors are shown under `failure`; `done` runs after success.
-    fn run_statements(
+    pub(super) fn run_statements(
         self: &Rc<Self>,
         stmts: Vec<String>,
         finally: Option<String>,
@@ -288,7 +288,7 @@ impl Workspace {
         );
     }
 
-    fn reload_tables(&self, which: impl Fn(&DbObject) -> bool) {
+    pub(super) fn reload_tables(&self, which: impl Fn(&DbObject) -> bool) {
         let tabs: Vec<_> = self
             .tabs
             .borrow()
@@ -320,7 +320,7 @@ impl Workspace {
 }
 
 /// A check box with a bold title and a dim explanation: the check, and the row to place.
-fn option_check(title: &str, description: &str) -> (gtk::CheckButton, gtk::Box) {
+pub(super) fn option_check(title: &str, description: &str) -> (gtk::CheckButton, gtk::Box) {
     let text = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(2).hexpand(true).build();
     text.append(&gtk::Label::builder().label(title).xalign(0.0).css_classes(["heading"]).build());
     text.append(

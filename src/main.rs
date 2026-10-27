@@ -1,3 +1,4 @@
+mod backup;
 mod config;
 mod db;
 mod export;
