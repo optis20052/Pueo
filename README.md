@@ -134,6 +134,16 @@ install -Dm644 data/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg \
   ~/.local/share/icons/hicolor/scalable/apps/io.github.pueo.Pueo.svg
 ```
 
+To build a Debian / Ubuntu package (`dist/pueo_<version>_<arch>.deb`):
+
+```sh
+./packaging/build-deb.sh
+sudo apt install ./dist/pueo_*.deb
+```
+
+The package depends on everything Pueo uses at runtime, so apt also installs `ssh` and the PostgreSQL and
+MariaDB client tools that backup and restore run.
+
 The icon is also bundled into the binary (`data/resources.gresource.xml`, compiled by `build.rs`), so the
 window and About dialog show it without installing.
 
